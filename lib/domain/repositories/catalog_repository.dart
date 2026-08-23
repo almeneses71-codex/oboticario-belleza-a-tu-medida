@@ -5,4 +5,3 @@ abstract interface class CatalogRepository {
   Future<List<Product>> loadProducts();
   Future<List<Question>> loadQuestions();
 }
-

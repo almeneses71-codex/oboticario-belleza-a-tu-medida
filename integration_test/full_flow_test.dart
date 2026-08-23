@@ -28,23 +28,17 @@ void main() {
     await tester.tap(find.text('Perfumería'));
     await tester.pumpAndSettle();
 
-    final answers = [
-      'Para mujer',
-      'Dulce y romántica',
-      'Todos los días',
-      'Marcante',
-      'Hasta \$175.000',
-    ];
+    final answers = ['Para mujer', 'Dulce', 'Salidas o eventos', 'Intensa'];
     for (var index = 0; index < answers.length; index++) {
       final answer = answers[index];
-      expect(find.text('Pregunta ${index + 1} de 5'), findsOneWidget);
+      expect(find.text('Pregunta ${index + 2} de 5'), findsOneWidget);
       await tester.ensureVisible(find.text(answer));
       await tester.tap(find.text(answer));
       await tester.pumpAndSettle();
-      final continueLabel = index == 4 ? 'Ver mi recomendación' : 'Continuar';
+      final continueLabel = index == 3 ? 'Ver mi recomendación' : 'Continuar';
       await tester.ensureVisible(find.text(continueLabel));
       await tester.tap(find.text(continueLabel));
-      if (index == 4) {
+      if (index == 3) {
         await tester.pump();
         expect(
           find.text('Estamos encontrando tu mejor opción'),

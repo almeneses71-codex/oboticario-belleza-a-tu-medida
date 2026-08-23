@@ -243,8 +243,10 @@ class AppController extends ChangeNotifier {
       throw const FormatException('Hay categorías desconocidas.');
     }
     for (final category in categories) {
-      if (questions.where((item) => item.category == category).length != 5) {
-        throw FormatException('$category no contiene exactamente 5 preguntas.');
+      if (questions.where((item) => item.category == category).length != 4) {
+        throw FormatException(
+          '$category no contiene exactamente 4 preguntas específicas.',
+        );
       }
     }
   }

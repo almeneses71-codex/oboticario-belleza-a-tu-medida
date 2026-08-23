@@ -372,7 +372,8 @@ class _QuestionScreen extends StatelessWidget {
         ),
       );
     }
-    final current = controller.questionIndex + 1;
+    // La categoría conservada visualmente es funcionalmente la pregunta 1.
+    final current = controller.questionIndex + 2;
     final selected = controller.answers[question.id];
     return _VisualBackground(
       child: _PageFrame(
@@ -410,7 +411,7 @@ class _QuestionScreen extends StatelessWidget {
               onPressed: selected == null ? null : controller.continueQuestion,
               child: Text(current == 5 ? 'Ver mi recomendación' : 'Continuar'),
             ),
-            if (current > 1) ...[
+            if (current > 2) ...[
               const SizedBox(height: 10),
               TextButton.icon(
                 onPressed: controller.back,

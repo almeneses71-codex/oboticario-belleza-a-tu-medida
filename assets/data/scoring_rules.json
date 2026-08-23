@@ -1,22 +1,16 @@
 {
-  "version": "1.0",
-  "catalogCycle": "08-2026",
-  "algorithm": [
-    "category",
-    "availability_and_eligibility",
-    "hard_filters",
-    "option_boosts",
-    "intensity_distance",
-    "role_bonus",
-    "stable_tie_break"
-  ],
-  "roleBonus": 1,
-  "maxReasons": 3,
-  "tieBreak": ["score_desc", "principal_first", "price_asc", "id_asc"],
-  "confidence": {
-    "high": "score >= 12 and gap >= 2",
-    "medium": "score >= 6",
-    "low": "otherwise"
-  }
+  "version": 2,
+  "algorithm": "weighted_percentage",
+  "filters": ["category", "available", "eligible", "priceCop>0", "minimum_data"],
+  "unknownAnswer": "excluded_from_denominator",
+  "minimumRecommendationScore": 55,
+  "confidence": {"high": 85, "good": 70, "moderate": 55},
+  "weights": {
+    "perfumeria": {"aroma": 40, "ocasion": 30, "intensidad": 30},
+    "corporal": {"necesidad": 45, "tipo": 30, "caracteristica": 25},
+    "facial": {"necesidad": 45, "piel": 30, "resultado": 20, "rutina": 5},
+    "cabello": {"necesidad_principal": 40, "necesidad_secundaria": 30, "tipo": 20, "rutina": 10},
+    "regalos": {"destinatario": 30, "tipo": 30, "ocasion": 20, "nivel": 20}
+  },
+  "tieBreak": ["score", "primary_criterion", "data_completeness", "role", "secondary_criteria", "stable_id"]
 }
-

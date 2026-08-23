@@ -1,6 +1,6 @@
 import 'product.dart';
 
-enum RecommendationConfidence { high, medium, low }
+enum RecommendationConfidence { high, good, moderate, low }
 
 class RankedProduct {
   const RankedProduct({
@@ -27,4 +27,3 @@ class RecommendationResult {
 
   bool get hasMatch => primary != null;
 }
-

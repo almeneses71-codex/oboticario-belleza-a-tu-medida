@@ -5,23 +5,29 @@ class Question {
     required this.order,
     required this.text,
     required this.options,
+    required this.weight,
+    required this.primaryCriterion,
   });
 
   factory Question.fromJson(Map<String, dynamic> json) => Question(
-        id: json['id'] as String,
-        category: json['category'] as String,
-        order: (json['order'] as num).toInt(),
-        text: json['text'] as String,
-        options: (json['options'] as List<dynamic>)
-            .map((item) => AnswerOption.fromJson(item as Map<String, dynamic>))
-            .toList(growable: false),
-      );
+    id: json['id'] as String,
+    category: json['category'] as String,
+    order: (json['order'] as num).toInt(),
+    text: json['text'] as String,
+    weight: (json['weight'] as num?)?.toInt() ?? 0,
+    primaryCriterion: json['primaryCriterion'] as bool? ?? false,
+    options: (json['options'] as List<dynamic>)
+        .map((item) => AnswerOption.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false),
+  );
 
   final String id;
   final String category;
   final int order;
   final String text;
   final List<AnswerOption> options;
+  final int weight;
+  final bool primaryCriterion;
 }
 
 class AnswerOption {
@@ -31,21 +37,23 @@ class AnswerOption {
     required this.reason,
     required this.hardFilters,
     required this.boosts,
+    required this.ignored,
     this.targetIntensity,
   });
 
   factory AnswerOption.fromJson(Map<String, dynamic> json) => AnswerOption(
-        id: json['id'] as String,
-        label: json['label'] as String,
-        reason: json['reason'] as String? ?? '',
-        hardFilters: Map<String, dynamic>.from(
-          json['hardFilters'] as Map<String, dynamic>? ?? const {},
-        ),
-        boosts: (json['boosts'] as List<dynamic>? ?? const [])
-            .map((item) => BoostRule.fromJson(item as Map<String, dynamic>))
-            .toList(growable: false),
-        targetIntensity: (json['targetIntensity'] as num?)?.toInt(),
-      );
+    id: json['id'] as String,
+    label: json['label'] as String,
+    reason: json['reason'] as String? ?? '',
+    hardFilters: Map<String, dynamic>.from(
+      json['hardFilters'] as Map<String, dynamic>? ?? const {},
+    ),
+    boosts: (json['boosts'] as List<dynamic>? ?? const [])
+        .map((item) => BoostRule.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false),
+    ignored: json['ignored'] as bool? ?? false,
+    targetIntensity: (json['targetIntensity'] as num?)?.toInt(),
+  );
 
   final String id;
   final String label;
@@ -53,17 +61,17 @@ class AnswerOption {
   final Map<String, dynamic> hardFilters;
   final List<BoostRule> boosts;
   final int? targetIntensity;
+  final bool ignored;
 }
 
 class BoostRule {
   const BoostRule({required this.queries, required this.points});
 
   factory BoostRule.fromJson(Map<String, dynamic> json) => BoostRule(
-        queries: (json['queries'] as List<dynamic>).cast<String>(),
-        points: (json['points'] as num).toInt(),
-      );
+    queries: (json['queries'] as List<dynamic>).cast<String>(),
+    points: (json['points'] as num).toInt(),
+  );
 
   final List<String> queries;
   final int points;
 }
-

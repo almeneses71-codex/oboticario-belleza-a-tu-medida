@@ -111,15 +111,14 @@ Future<void> _openPerfumeResult(
   await tester.pumpAndSettle();
   for (final answer in [
     'Para mujer',
-    'Dulce y romántica',
-    'Todos los días',
-    'Marcante',
-    'Hasta \$175.000',
+    'Dulce',
+    'Salidas o eventos',
+    'Intensa',
   ]) {
     await tester.ensureVisible(find.text(answer));
     await tester.tap(find.text(answer));
     await tester.pumpAndSettle();
-    final last = answer == r'Hasta $175.000';
+    final last = answer == 'Intensa';
     final label = last ? 'Ver mi recomendación' : 'Continuar';
     await tester.ensureVisible(find.text(label));
     await tester.tap(find.text(label));

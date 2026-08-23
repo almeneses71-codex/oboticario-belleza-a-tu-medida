@@ -33,16 +33,16 @@ void main() {
 
     await tester.tap(find.text('Perfumería'));
     await tester.pumpAndSettle();
-    expect(find.text('Pregunta 1 de 5'), findsOneWidget);
+    expect(find.text('Pregunta 2 de 5'), findsOneWidget);
     await tester.tap(find.text('Para mujer'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Continuar'));
     await tester.tap(find.text('Continuar'));
     await tester.pumpAndSettle();
-    expect(find.text('Pregunta 2 de 5'), findsOneWidget);
+    expect(find.text('Pregunta 3 de 5'), findsOneWidget);
     await tester.ensureVisible(find.text('Atrás'));
     await tester.tap(find.text('Atrás'));
     await tester.pumpAndSettle();
-    expect(find.text('Pregunta 1 de 5'), findsOneWidget);
+    expect(find.text('Pregunta 2 de 5'), findsOneWidget);
   });
 }

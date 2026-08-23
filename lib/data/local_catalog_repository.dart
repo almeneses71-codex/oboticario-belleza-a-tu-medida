@@ -27,4 +27,3 @@ class LocalCatalogRepository implements CatalogRepository {
         .toList(growable: false);
   }
 }
-

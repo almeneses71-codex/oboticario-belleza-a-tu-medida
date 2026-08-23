@@ -11,105 +11,185 @@ class RecommendationEngine {
     required List<Question> questions,
     required Map<String, String> answers,
   }) {
-    final selectedOptions = <AnswerOption>[];
-    for (final question in questions.where((item) => item.category == category)) {
+    final selections = <_Selection>[];
+    for (final question in questions.where(
+      (item) => item.category == category,
+    )) {
       final answerId = answers[question.id];
       if (answerId == null) continue;
-      selectedOptions.add(
-        question.options.firstWhere((option) => option.id == answerId),
+      selections.add(
+        _Selection(
+          question,
+          question.options.firstWhere((option) => option.id == answerId),
+        ),
       );
     }
+    final applicable = selections
+        .where((item) => !item.option.ignored && item.question.weight > 0)
+        .toList(growable: false);
+    final denominator = applicable.fold<int>(
+      0,
+      (sum, item) => sum + item.question.weight,
+    );
+    if (denominator == 0) return _noMatch;
 
-    final eligible = products.where((product) {
-      if (product.category != category ||
-          !product.available ||
-          !product.eligible) {
-        return false;
-      }
-      return selectedOptions.every((option) => _passes(product, option));
-    }).toList(growable: false);
-
-    if (eligible.isEmpty) {
-      return const RecommendationResult(
-        primary: null,
-        alternative: null,
-        confidence: RecommendationConfidence.low,
-      );
-    }
-
-    final ranked = eligible.map((product) {
-      var score = product.role.toLowerCase() == 'principal' ? 1 : 0;
-      final reasons = <String>['Responde a: ${product.need}.'];
-      for (final option in selectedOptions) {
-        var optionMatched = option.hardFilters.isNotEmpty;
-        final target = option.targetIntensity;
-        if (target != null) {
-          score += (5 - (product.intensity - target).abs()).clamp(0, 5).toInt();
-          optionMatched = true;
-        }
-        for (final boost in option.boosts) {
-          if (boost.queries.any(
-            (query) => product.searchableText.contains(query.toLowerCase()),
-          )) {
-            score += boost.points;
-            optionMatched = true;
+    final ranked = products
+        .where((product) {
+          return product.category == category &&
+              product.available &&
+              product.eligible &&
+              product.priceCop > 0 &&
+              _hasMinimumData(product) &&
+              selections.every(
+                (item) => item.option.ignored || _passes(product, item.option),
+              );
+        })
+        .map((product) {
+          var earned = 0.0;
+          var primaryMatch = 0;
+          var secondaryMatch = 0.0;
+          final reasons = <String>[];
+          for (final selection in applicable) {
+            final quality = _matchQuality(product, selection.option);
+            final weighted = selection.question.weight * quality / 100;
+            earned += weighted;
+            if (selection.question.primaryCriterion) {
+              primaryMatch = quality;
+            } else {
+              secondaryMatch += weighted;
+            }
+            if (quality > 0 && selection.option.reason.isNotEmpty) {
+              reasons.add(selection.option.reason);
+            }
           }
-        }
-        if (optionMatched && option.reason.isNotEmpty) {
-          reasons.add(option.reason);
-        }
-      }
-      return RankedProduct(
-        product: product,
-        score: score,
-        reasons: reasons.toSet().take(3).toList(growable: false),
-      );
-    }).toList();
+          final score = (earned * 100 / denominator).round();
+          return _Candidate(
+            ranked: RankedProduct(
+              product: product,
+              score: score,
+              reasons: reasons.toSet().take(5).toList(growable: false),
+            ),
+            primaryMatch: primaryMatch,
+            completeness: _completeness(product),
+            secondaryMatch: secondaryMatch,
+          );
+        })
+        .where((item) => item.ranked.score >= 55)
+        .toList();
 
+    if (ranked.isEmpty) return _noMatch;
     ranked.sort((a, b) {
-      final scoreOrder = b.score.compareTo(a.score);
-      if (scoreOrder != 0) return scoreOrder;
-      final roleOrder = _roleRank(a.product).compareTo(_roleRank(b.product));
-      if (roleOrder != 0) return roleOrder;
-      final priceOrder = a.product.priceCop.compareTo(b.product.priceCop);
-      if (priceOrder != 0) return priceOrder;
-      return a.product.id.compareTo(b.product.id);
+      var order = b.ranked.score.compareTo(a.ranked.score);
+      if (order != 0) return order;
+      order = b.primaryMatch.compareTo(a.primaryMatch);
+      if (order != 0) return order;
+      order = b.completeness.compareTo(a.completeness);
+      if (order != 0) return order;
+      order = _roleRank(
+        a.ranked.product,
+      ).compareTo(_roleRank(b.ranked.product));
+      if (order != 0) return order;
+      order = b.secondaryMatch.compareTo(a.secondaryMatch);
+      if (order != 0) return order;
+      return a.ranked.product.id.compareTo(b.ranked.product.id);
     });
 
-    final primary = ranked.first;
-    final alternative = ranked.length > 1 ? ranked[1] : null;
-    final gap = alternative == null ? primary.score : primary.score - alternative.score;
-    final confidence = primary.score >= 12 && gap >= 2
-        ? RecommendationConfidence.high
-        : primary.score >= 6
-            ? RecommendationConfidence.medium
-            : RecommendationConfidence.low;
+    final primary = ranked.first.ranked;
     return RecommendationResult(
       primary: primary,
-      alternative: alternative,
-      confidence: confidence,
+      alternative: ranked.length > 1 ? ranked[1].ranked : null,
+      confidence: primary.score >= 85
+          ? RecommendationConfidence.high
+          : primary.score >= 70
+          ? RecommendationConfidence.good
+          : RecommendationConfidence.moderate,
     );
   }
 
+  static const _noMatch = RecommendationResult(
+    primary: null,
+    alternative: null,
+    confidence: RecommendationConfidence.low,
+  );
+
   bool _passes(Product product, AnswerOption option) {
-    final filters = option.hardFilters;
-    final recipients = (filters['recipients'] as List<dynamic>?)?.cast<String>();
+    final recipients = (option.hardFilters['recipients'] as List<dynamic>?)
+        ?.cast<String>();
     if (recipients != null && recipients.isNotEmpty) {
-      final recipient = product.recipient.toLowerCase();
       final accepted = recipients.map((item) => item.toLowerCase()).toSet();
-      if (!accepted.contains(recipient) && recipient != 'unisex') return false;
+      if (!accepted.contains(product.recipient.toLowerCase()) &&
+          product.recipient.toLowerCase() != 'unisex') {
+        return false;
+      }
     }
-    final types = (filters['types'] as List<dynamic>?)?.cast<String>();
-    if (types != null &&
-        types.isNotEmpty &&
-        !types.map((item) => item.toLowerCase()).contains(product.type.toLowerCase())) {
-      return false;
-    }
-    final maxPrice = (filters['maxPrice'] as num?)?.toInt();
-    if (maxPrice != null && product.priceCop > maxPrice) return false;
-    return true;
+    final types = (option.hardFilters['types'] as List<dynamic>?)
+        ?.cast<String>();
+    return types == null ||
+        types.isEmpty ||
+        types
+            .map((item) => item.toLowerCase())
+            .contains(product.type.toLowerCase());
   }
+
+  int _matchQuality(Product product, AnswerOption option) {
+    if (option.targetIntensity != null) {
+      final difference = (product.intensity - option.targetIntensity!).abs();
+      return difference == 0
+          ? 100
+          : difference == 1
+          ? 70
+          : difference == 2
+          ? 40
+          : 0;
+    }
+    var quality = option.hardFilters.isNotEmpty ? 100 : 0;
+    for (final boost in option.boosts) {
+      if (boost.queries.any(
+        (query) => product.searchableText.contains(query.toLowerCase()),
+      )) {
+        if (boost.points > quality) quality = boost.points.clamp(0, 100);
+      }
+    }
+    return quality;
+  }
+
+  bool _hasMinimumData(Product product) =>
+      product.name.trim().isNotEmpty &&
+      product.type.trim().isNotEmpty &&
+      product.need.trim().isNotEmpty &&
+      product.profile.trim().isNotEmpty &&
+      product.moment.trim().isNotEmpty;
+
+  int _completeness(Product product) => [
+    product.name,
+    product.type,
+    product.subtype,
+    product.recipient,
+    product.familyOrActive,
+    product.need,
+    product.profile,
+    product.moment,
+  ].where((value) => value.trim().isNotEmpty).length;
 
   int _roleRank(Product product) =>
       product.role.toLowerCase() == 'principal' ? 0 : 1;
+}
+
+class _Selection {
+  const _Selection(this.question, this.option);
+  final Question question;
+  final AnswerOption option;
+}
+
+class _Candidate {
+  const _Candidate({
+    required this.ranked,
+    required this.primaryMatch,
+    required this.completeness,
+    required this.secondaryMatch,
+  });
+  final RankedProduct ranked;
+  final int primaryMatch;
+  final int completeness;
+  final double secondaryMatch;
 }
