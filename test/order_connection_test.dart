@@ -62,6 +62,32 @@ void main() {
       expect(fake.draft!.items, hasLength(1));
     },
   );
+
+  test(
+    'active wheel delegates customer and complete selection to server',
+    () async {
+      final fake = _FakeWheelOrderRepository();
+      final controller = await _controller(fake);
+      final primary = controller.products.firstWhere(
+        (item) => item.id == 'OB017',
+      );
+      final candidate = controller.crossSellFor(primary).candidates.first;
+      final selection = OrderSelection.fromPrimary(
+        primary,
+      )..addComplementary(candidate.product, relationId: candidate.relation.id);
+
+      final benefit = await controller.spinWheel(
+        customer: _customer,
+        selection: selection,
+      );
+
+      expect(controller.wheelCampaignActive, isTrue);
+      expect(fake.spinItems, hasLength(2));
+      expect(fake.spinCustomer!.whatsapp, '3001234567');
+      expect(benefit.discountPercent, 10);
+      expect(benefit.netProductsCop, 135000);
+    },
+  );
 }
 
 const _customer = CustomerDraft(
@@ -102,6 +128,32 @@ class _FakeOrderRepository implements OrderRepository {
       id: '00000000-0000-0000-0000-000000000001',
       number: 'OBM-TEST-0001',
       status: OrderStatus.requested,
+    );
+  }
+}
+
+class _FakeWheelOrderRepository extends _FakeOrderRepository
+    implements WheelRepository {
+  CustomerDraft? spinCustomer;
+  List<OrderItemDraft>? spinItems;
+
+  @override
+  Future<WheelCampaignStatus> loadWheelCampaignStatus() async =>
+      const WheelCampaignStatus(active: true);
+
+  @override
+  Future<WheelBenefit> spinWheel({
+    required CustomerDraft customer,
+    required List<OrderItemDraft> items,
+  }) async {
+    spinCustomer = customer;
+    spinItems = items;
+    return const WheelBenefit(
+      spinId: '00000000-0000-0000-0000-000000000099',
+      discountPercent: 10,
+      productsCop: 150000,
+      discountCop: 15000,
+      netProductsCop: 135000,
     );
   }
 }

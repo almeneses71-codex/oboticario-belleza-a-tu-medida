@@ -173,3 +173,25 @@ class CreatedOrder {
   final String number;
   final OrderStatus status;
 }
+
+class WheelCampaignStatus {
+  const WheelCampaignStatus({required this.active});
+
+  final bool active;
+}
+
+class WheelBenefit {
+  const WheelBenefit({
+    required this.spinId,
+    required this.discountPercent,
+    required this.productsCop,
+    required this.discountCop,
+    required this.netProductsCop,
+  });
+
+  final String spinId;
+  final int discountPercent;
+  final int productsCop;
+  final int discountCop;
+  final int netProductsCop;
+}

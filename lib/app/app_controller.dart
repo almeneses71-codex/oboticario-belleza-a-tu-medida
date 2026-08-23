@@ -57,12 +57,20 @@ class AppController extends ChangeNotifier {
   RecommendationResult? result;
   bool loading = true;
   String? error;
+  bool wheelCampaignActive = false;
 
   Future<void> initialize() async {
     try {
       products = await _repository.loadProducts();
       questions = await _repository.loadQuestions();
       crossSellRelations = await _crossSellRepository.loadRelations();
+      final wheelRepository = _orderRepository;
+      if (wheelRepository != null && wheelRepository is WheelRepository) {
+        wheelCampaignActive =
+            (await (wheelRepository as WheelRepository)
+                    .loadWheelCampaignStatus())
+                .active;
+      }
       _validateData();
       await _analytics.recordAppOpen();
     } catch (exception) {
@@ -172,6 +180,24 @@ class AppController extends ChangeNotifier {
       _analytics.recordWhatsappClick(productId);
 
   bool get orderSubmissionConfigured => _orderRepository?.isConfigured == true;
+
+  Future<WheelBenefit> spinWheel({
+    required CustomerDraft customer,
+    required OrderSelection selection,
+  }) {
+    final repository = _orderRepository;
+    if (repository == null ||
+        repository is! WheelRepository ||
+        !wheelCampaignActive) {
+      throw const OrderSubmissionUnavailable(
+        'La campaña Amor y Amistad no está disponible.',
+      );
+    }
+    return (repository as WheelRepository).spinWheel(
+      customer: customer,
+      items: selection.items,
+    );
+  }
 
   CrossSellResult crossSellFor(Product product) => _crossSellEngine.recommend(
     primary: product,

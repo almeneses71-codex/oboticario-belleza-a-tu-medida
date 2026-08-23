@@ -1,9 +1,19 @@
 import '../models/order.dart';
+import '../models/customer_draft.dart';
 
 abstract interface class OrderRepository {
   bool get isConfigured;
 
   Future<CreatedOrder> createOrder(OrderDraft draft);
+}
+
+abstract interface class WheelRepository {
+  Future<WheelCampaignStatus> loadWheelCampaignStatus();
+
+  Future<WheelBenefit> spinWheel({
+    required CustomerDraft customer,
+    required List<OrderItemDraft> items,
+  });
 }
 
 class OrderSubmissionUnavailable implements Exception {

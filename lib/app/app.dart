@@ -572,6 +572,22 @@ class _ResultScreenState extends State<_ResultScreen> {
                 onSelect: () => _selectProduct(result.alternative!.product),
               ),
             ],
+            if (controller.wheelCampaignActive) ...[
+              const SizedBox(height: 18),
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.card_giftcard, color: AppTheme.green),
+                    title: Text('Tienes un beneficio especial'),
+                    subtitle: Text(
+                      'Elige tu producto y antes de enviar tu solicitud podrás descubrir tu beneficio de Amor y Amistad.',
+                    ),
+                  ),
+                ),
+              ),
+            ],
             if (selectedProduct != null && crossSell.candidates.isNotEmpty) ...[
               const SizedBox(height: 22),
               Text(
@@ -689,6 +705,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                 whatsappController: whatsappController,
                 showSummary: showSummary,
                 orderSubmissionConfigured: controller.orderSubmissionConfigured,
+                wheelCampaignActive: controller.wheelCampaignActive,
                 onReview: () {
                   if (formKey.currentState!.validate()) {
                     setSheetState(() => showSummary = true);
@@ -706,6 +723,15 @@ class _ResultScreenState extends State<_ResultScreen> {
                   );
                   return created;
                 },
+                onSpin: () => controller.spinWheel(
+                  customer: CustomerDraft(
+                    name: nameController.text,
+                    whatsapp: whatsappController.text,
+                    acceptsDataProcessing: true,
+                    acceptsPromotions: false,
+                  ),
+                  selection: selection,
+                ),
               ),
             ),
           );
@@ -1007,8 +1033,10 @@ class _RequestContent extends StatefulWidget {
     required this.whatsappController,
     required this.showSummary,
     required this.orderSubmissionConfigured,
+    required this.wheelCampaignActive,
     required this.onReview,
     required this.onSubmit,
+    required this.onSpin,
   });
 
   final OrderSelection selection;
@@ -1018,8 +1046,10 @@ class _RequestContent extends StatefulWidget {
   final TextEditingController whatsappController;
   final bool showSummary;
   final bool orderSubmissionConfigured;
+  final bool wheelCampaignActive;
   final VoidCallback onReview;
   final Future<CreatedOrder> Function() onSubmit;
+  final Future<WheelBenefit> Function() onSpin;
 
   @override
   State<_RequestContent> createState() => _RequestContentState();
@@ -1030,6 +1060,8 @@ class _RequestContentState extends State<_RequestContent> {
   bool submitting = false;
   CreatedOrder? createdOrder;
   String? submissionError;
+  bool spinning = false;
+  WheelBenefit? wheelBenefit;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -1144,14 +1176,29 @@ class _RequestContentState extends State<_RequestContent> {
                 '${item.productName} · ${_ProductCard.priceLabel(item.originalUnitPriceCop)}',
           ),
         _SummaryRow(
-          label: 'Subtotal',
-          value: _ProductCard.priceLabel(widget.selection.amounts.subtotalCop),
+          label: 'Productos',
+          value: _ProductCard.priceLabel(
+            wheelBenefit?.productsCop ?? widget.selection.amounts.subtotalCop,
+          ),
         ),
-        const _SummaryRow(label: 'Descuento', value: r'$0 COP'),
+        if (wheelBenefit != null) ...[
+          _SummaryRow(
+            label:
+                'Descuento Amor y Amistad (${wheelBenefit!.discountPercent}%)',
+            value: '-${_ProductCard.priceLabel(wheelBenefit!.discountCop)}',
+          ),
+          _SummaryRow(
+            label: 'Venta neta de productos',
+            value: _ProductCard.priceLabel(wheelBenefit!.netProductsCop),
+          ),
+        ] else if (!widget.wheelCampaignActive)
+          const _SummaryRow(label: 'Descuento', value: r'$0 COP'),
         const _SummaryRow(label: 'Entrega/envío', value: 'Por confirmar'),
         _SummaryRow(
-          label: 'Total productos',
-          value: _ProductCard.priceLabel(widget.selection.amounts.totalCop),
+          label: 'TOTAL',
+          value: _ProductCard.priceLabel(
+            wheelBenefit?.netProductsCop ?? widget.selection.amounts.totalCop,
+          ),
         ),
         const _SummaryRow(label: 'Asesor', value: AppConfig.advisorName),
         _SummaryRow(label: 'Canal', value: widget.attribution.channelId),
@@ -1160,8 +1207,35 @@ class _RequestContentState extends State<_RequestContent> {
           value: widget.attribution.campaignId ?? 'Sin campaña',
         ),
         const SizedBox(height: 20),
+        if (widget.wheelCampaignActive && wheelBenefit == null) ...[
+          const Text(
+            '¡Es momento de descubrir tu beneficio!',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: spinning ? null : _spin,
+            icon: const Icon(Icons.casino_outlined),
+            label: Text(spinning ? 'Girando…' : 'Girar ruleta'),
+          ),
+          const SizedBox(height: 12),
+        ] else if (wheelBenefit != null) ...[
+          Text(
+            '¡Ganaste ${wheelBenefit!.discountPercent}% de descuento!',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.green,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         FilledButton.icon(
-          onPressed: widget.orderSubmissionConfigured && !submitting
+          onPressed:
+              widget.orderSubmissionConfigured &&
+                  !submitting &&
+                  (!widget.wheelCampaignActive || wheelBenefit != null)
               ? _submit
               : null,
           icon: const Icon(Icons.send_outlined),
@@ -1203,6 +1277,23 @@ class _RequestContentState extends State<_RequestContent> {
       }
     } finally {
       if (mounted) setState(() => submitting = false);
+    }
+  }
+
+  Future<void> _spin() async {
+    setState(() {
+      spinning = true;
+      submissionError = null;
+    });
+    try {
+      final benefit = await widget.onSpin();
+      if (mounted) setState(() => wheelBenefit = benefit);
+    } catch (error) {
+      if (mounted) {
+        setState(() => submissionError = 'No fue posible girar: $error');
+      }
+    } finally {
+      if (mounted) setState(() => spinning = false);
     }
   }
 }
