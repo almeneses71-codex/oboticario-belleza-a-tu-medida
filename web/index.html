@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Recomendador independiente de productos O Boticário en cinco preguntas.">
+  <meta name="theme-color" content="#176B55">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Belleza a tu Medida">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <style>
+    #offline-banner { display:none; position:fixed; z-index:9999; left:50%; top:12px; transform:translateX(-50%); padding:10px 16px; border-radius:14px; background:#7A4E00; color:white; font:600 14px system-ui; box-shadow:0 6px 20px #0003; }
+  </style>
+  <title>oBoticario Belleza a tu Medida</title>
+</head>
+<body>
+  <noscript>Activa JavaScript para utilizar el recomendador.</noscript>
+  <div id="offline-banner" role="status">Estás sin conexión. Usaremos la versión guardada.</div>
+  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    const offlineBanner = document.getElementById('offline-banner');
+    const refreshNetworkState = () => offlineBanner.style.display = navigator.onLine ? 'none' : 'block';
+    window.addEventListener('online', refreshNetworkState);
+    window.addEventListener('offline', refreshNetworkState);
+    refreshNetworkState();
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('service_worker.js'));
+    }
+  </script>
+</body>
+</html>
+

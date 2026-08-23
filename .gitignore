@@ -1,0 +1,30 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+*.iml
+.idea/
+.vscode/
+
+
+# Variables y secretos
+.env
+.env.*
+!.env.example
+
+# Supabase temporales/locales
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+supabase/.env.*
+
+# Android / firmas
+android/key.properties
+*.jks
+*.keystore
+
+# Logs y temporales
+*.log
+*.tmp

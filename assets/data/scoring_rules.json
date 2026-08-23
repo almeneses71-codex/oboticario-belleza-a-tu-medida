@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "catalogCycle": "08-2026",
+  "algorithm": [
+    "category",
+    "availability_and_eligibility",
+    "hard_filters",
+    "option_boosts",
+    "intensity_distance",
+    "role_bonus",
+    "stable_tie_break"
+  ],
+  "roleBonus": 1,
+  "maxReasons": 3,
+  "tieBreak": ["score_desc", "principal_first", "price_asc", "id_asc"],
+  "confidence": {
+    "high": "score >= 12 and gap >= 2",
+    "medium": "score >= 6",
+    "low": "otherwise"
+  }
+}
+

@@ -1,0 +1,29 @@
+name: oboticario_belleza_a_tu_medida
+description: Asesor independiente de productos O Boticario en cinco preguntas.
+publish_to: "none"
+version: 0.3.3+6
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: 2.5.5
+  url_launcher: 6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/primera_pantalla.jpeg
+    - assets/data/products.json
+    - assets/data/questionnaire.json
+    - assets/data/scoring_rules.json
+    - assets/images/products/
