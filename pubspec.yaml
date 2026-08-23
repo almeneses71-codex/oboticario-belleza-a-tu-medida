@@ -27,4 +27,5 @@ flutter:
     - assets/data/products.json
     - assets/data/questionnaire.json
     - assets/data/scoring_rules.json
+    - assets/data/cross_sell_relations.json
     - assets/images/products/

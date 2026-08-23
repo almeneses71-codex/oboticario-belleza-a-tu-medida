@@ -11,6 +11,8 @@ class AppConfig {
     'ADVISOR_NAME',
     defaultValue: 'Dario y Ana',
   );
+  static const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  static const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
   static const independentAdvisorNotice =
       'Asesor independiente de productos O Boticário. No es una aplicación '
       'oficial de la marca. Las recomendaciones son orientativas y se basan '
@@ -21,6 +23,9 @@ class AppConfig {
   static bool get whatsappConfigured =>
       RegExp(r'^\d{8,15}$').hasMatch(whatsappNumber);
 
+  static bool get supabaseConfigured =>
+      Uri.tryParse(supabaseUrl)?.hasScheme == true &&
+      supabaseAnonKey.trim().isNotEmpty;
+
   static bool get priceIsCurrent => DateTime.now().isBefore(priceValidUntil);
 }
-

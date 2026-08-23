@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/services/local_analytics_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,6 +15,8 @@ void main() {
     await tester.pumpWidget(
       BeautyAdvisorApp(
         repository: const LocalCatalogRepository(),
+        crossSellRepository: const LocalCrossSellRepository(),
+        orderRepository: null,
         analytics: LocalAnalyticsService(),
       ),
     );
@@ -71,6 +74,7 @@ void main() {
       find.widgetWithText(TextFormField, 'Número de WhatsApp'),
       '573001234567',
     );
+    await tester.tap(find.byType(Checkbox));
     await tester.tap(find.text('Revisar mi solicitud'));
     await tester.pumpAndSettle();
     expect(find.text('Resumen de tu solicitud'), findsOneWidget);

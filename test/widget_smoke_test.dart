@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/services/local_analytics_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +11,8 @@ void main() {
     await tester.pumpWidget(
       BeautyAdvisorApp(
         repository: const LocalCatalogRepository(),
+        crossSellRepository: const LocalCrossSellRepository(),
+        orderRepository: null,
         analytics: LocalAnalyticsService(),
       ),
     );

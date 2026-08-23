@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/order.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/repositories/order_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/services/local_analytics_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,7 +12,8 @@ void main() {
   testWidgets('manual selection drives the exact validated local summary', (
     tester,
   ) async {
-    await _openPerfumeResult(tester);
+    final orders = _FakeOrderRepository();
+    await _openPerfumeResult(tester, orders);
 
     await _selectProduct(tester, 'Egeo Dolce EDT');
     await tester.ensureVisible(find.text('Continuar con mi elección'));
@@ -29,6 +33,7 @@ void main() {
       find.widgetWithText(TextFormField, 'Número de WhatsApp'),
       '+57 300-123-4567',
     );
+    await tester.tap(find.byType(Checkbox));
     await tester.tap(find.text('Revisar mi solicitud'));
     await tester.pumpAndSettle();
     expect(find.text('Resumen de tu solicitud'), findsOneWidget);
@@ -39,6 +44,11 @@ void main() {
     );
     expect(find.text('60138'), findsOneWidget);
     expect(find.text('573001234567'), findsOneWidget);
+    await tester.ensureVisible(find.text('Enviar mi solicitud'));
+    await tester.tap(find.text('Enviar mi solicitud'));
+    await tester.pumpAndSettle();
+    expect(find.text('OBM-TEST-0001'), findsOneWidget);
+    expect(orders.draft!.items.single.productId, 'OB001');
 
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
@@ -61,6 +71,7 @@ void main() {
       find.widgetWithText(TextFormField, 'Número de WhatsApp'),
       '573001234567',
     );
+    await tester.tap(find.byType(Checkbox));
     await tester.tap(find.text('Revisar mi solicitud'));
     await tester.pumpAndSettle();
     final secondSummary = find.byType(BottomSheet);
@@ -72,14 +83,23 @@ void main() {
       find.descendant(of: secondSummary, matching: find.text('Código/SKU')),
       findsOneWidget,
     );
+    await tester.ensureVisible(find.text('Enviar mi solicitud'));
+    await tester.tap(find.text('Enviar mi solicitud'));
+    await tester.pumpAndSettle();
+    expect(orders.draft!.items.single.productId, isNot('OB001'));
   });
 }
 
-Future<void> _openPerfumeResult(WidgetTester tester) async {
+Future<void> _openPerfumeResult(
+  WidgetTester tester,
+  OrderRepository orderRepository,
+) async {
   SharedPreferences.setMockInitialValues({});
   await tester.pumpWidget(
     BeautyAdvisorApp(
       repository: const LocalCatalogRepository(),
+      crossSellRepository: const LocalCrossSellRepository(),
+      orderRepository: orderRepository,
       analytics: LocalAnalyticsService(),
     ),
   );
@@ -104,6 +124,23 @@ Future<void> _openPerfumeResult(WidgetTester tester) async {
     await tester.ensureVisible(find.text(label));
     await tester.tap(find.text(label));
     await tester.pumpAndSettle();
+  }
+}
+
+class _FakeOrderRepository implements OrderRepository {
+  OrderDraft? draft;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<CreatedOrder> createOrder(OrderDraft draft) async {
+    this.draft = draft;
+    return const CreatedOrder(
+      id: '00000000-0000-0000-0000-000000000001',
+      number: 'OBM-TEST-0001',
+      status: OrderStatus.requested,
+    );
   }
 }
 

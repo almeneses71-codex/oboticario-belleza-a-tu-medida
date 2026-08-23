@@ -3,7 +3,15 @@ import 'package:flutter/material.dart';
 import '../domain/models/product.dart';
 import '../domain/models/question.dart';
 import '../domain/models/recommendation_result.dart';
+import '../domain/models/cross_sell_result.dart';
+import '../domain/models/attribution_context.dart';
+import '../domain/colombian_mobile_number.dart';
+import '../domain/models/customer_draft.dart';
+import '../domain/models/order.dart';
+import '../domain/models/order_selection.dart';
 import '../domain/repositories/catalog_repository.dart';
+import '../domain/repositories/cross_sell_repository.dart';
+import '../domain/repositories/order_repository.dart';
 import '../services/analytics_service.dart';
 import '../services/whatsapp_link_service.dart';
 import 'app_config.dart';
@@ -13,11 +21,15 @@ import 'app_theme.dart';
 class BeautyAdvisorApp extends StatefulWidget {
   const BeautyAdvisorApp({
     required this.repository,
+    required this.crossSellRepository,
+    required this.orderRepository,
     required this.analytics,
     super.key,
   });
 
   final CatalogRepository repository;
+  final CrossSellRepository crossSellRepository;
+  final OrderRepository? orderRepository;
   final AnalyticsService analytics;
 
   @override
@@ -32,6 +44,8 @@ class _BeautyAdvisorAppState extends State<BeautyAdvisorApp> {
     super.initState();
     controller = AppController(
       repository: widget.repository,
+      crossSellRepository: widget.crossSellRepository,
+      orderRepository: widget.orderRepository,
       analytics: widget.analytics,
     )..initialize();
   }
@@ -498,6 +512,8 @@ class _ResultScreen extends StatefulWidget {
 
 class _ResultScreenState extends State<_ResultScreen> {
   Product? selectedProduct;
+  OrderSelection? orderSelection;
+  CrossSellResult crossSell = const CrossSellResult([]);
 
   AppController get controller => widget.controller;
 
@@ -555,10 +571,28 @@ class _ResultScreenState extends State<_ResultScreen> {
                 onSelect: () => _selectProduct(result.alternative!.product),
               ),
             ],
+            if (selectedProduct != null && crossSell.candidates.isNotEmpty) ...[
+              const SizedBox(height: 22),
+              Text(
+                'Completa tu elección',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 10),
+              for (final candidate in crossSell.candidates)
+                _ComplementaryCard(
+                  candidate: candidate,
+                  selected:
+                      orderSelection?.containsComplementary(
+                        candidate.product.id,
+                      ) ==
+                      true,
+                  onChanged: () => _toggleComplementary(candidate),
+                ),
+            ],
             if (selectedProduct != null) ...[
               const SizedBox(height: 18),
               FilledButton.icon(
-                onPressed: () => _showRequest(context, selectedProduct!),
+                onPressed: () => _showRequest(context, orderSelection!),
                 icon: const Icon(Icons.arrow_forward),
                 label: const Text('Continuar con mi elección'),
               ),
@@ -593,10 +627,38 @@ class _ResultScreenState extends State<_ResultScreen> {
   }
 
   void _selectProduct(Product product) {
-    setState(() => selectedProduct = product);
+    final nextSelection = OrderSelection.fromPrimary(product);
+    final nextCrossSell = controller.crossSellFor(product);
+    setState(() {
+      selectedProduct = product;
+      orderSelection = nextSelection;
+      crossSell = nextCrossSell;
+    });
+    for (final candidate in nextCrossSell.candidates) {
+      controller.recordCrossSellShown(candidate);
+    }
   }
 
-  Future<void> _showRequest(BuildContext context, Product product) async {
+  void _toggleComplementary(CrossSellCandidate candidate) {
+    final selection = orderSelection!;
+    final added = !selection.containsComplementary(candidate.product.id);
+    setState(() {
+      if (added) {
+        selection.addComplementary(
+          candidate.product,
+          relationId: candidate.relation.id,
+        );
+      } else {
+        selection.removeComplementary(candidate.product.id);
+      }
+    });
+    controller.recordComplementaryChanged(candidate: candidate, added: added);
+  }
+
+  Future<void> _showRequest(
+    BuildContext context,
+    OrderSelection selection,
+  ) async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final whatsappController = TextEditingController();
@@ -617,14 +679,31 @@ class _ResultScreenState extends State<_ResultScreen> {
                 22 + MediaQuery.viewInsetsOf(sheetContext).bottom,
               ),
               child: _RequestContent(
-                product: product,
+                selection: selection,
+                product: controller.products.firstWhere(
+                  (item) => item.id == selection.primary.productId,
+                ),
+                attribution: controller.attribution,
                 nameController: nameController,
                 whatsappController: whatsappController,
                 showSummary: showSummary,
+                orderSubmissionConfigured: controller.orderSubmissionConfigured,
                 onReview: () {
                   if (formKey.currentState!.validate()) {
                     setSheetState(() => showSummary = true);
                   }
+                },
+                onSubmit: () async {
+                  final created = await controller.createOrder(
+                    customer: CustomerDraft(
+                      name: nameController.text,
+                      whatsapp: whatsappController.text,
+                      acceptsDataProcessing: true,
+                      acceptsPromotions: false,
+                    ),
+                    selection: selection,
+                  );
+                  return created;
                 },
               ),
             ),
@@ -772,6 +851,70 @@ class _ProductCard extends StatelessWidget {
   }
 }
 
+class _ComplementaryCard extends StatelessWidget {
+  const _ComplementaryCard({
+    required this.candidate,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final CrossSellCandidate candidate;
+  final bool selected;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final product = candidate.product;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _ProductImage(product: product),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      Text(product.presentation),
+                      const SizedBox(height: 8),
+                      Text(
+                        _ProductCard.priceLabel(product.priceCop),
+                        style: const TextStyle(
+                          color: AppTheme.green,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(candidate.relation.benefit),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onChanged,
+              icon: Icon(selected ? Icons.remove_circle_outline : Icons.add),
+              label: Text(
+                selected ? 'Quitar complemento' : 'Agregar complemento',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ProductImage extends StatelessWidget {
   const _ProductImage({required this.product});
 
@@ -854,20 +997,38 @@ class _AdvisorButton extends StatelessWidget {
   }
 }
 
-class _RequestContent extends StatelessWidget {
+class _RequestContent extends StatefulWidget {
   const _RequestContent({
+    required this.selection,
     required this.product,
+    required this.attribution,
     required this.nameController,
     required this.whatsappController,
     required this.showSummary,
+    required this.orderSubmissionConfigured,
     required this.onReview,
+    required this.onSubmit,
   });
 
+  final OrderSelection selection;
   final Product product;
+  final AttributionContext attribution;
   final TextEditingController nameController;
   final TextEditingController whatsappController;
   final bool showSummary;
+  final bool orderSubmissionConfigured;
   final VoidCallback onReview;
+  final Future<CreatedOrder> Function() onSubmit;
+
+  @override
+  State<_RequestContent> createState() => _RequestContentState();
+}
+
+class _RequestContentState extends State<_RequestContent> {
+  bool acceptsDataProcessing = false;
+  bool submitting = false;
+  CreatedOrder? createdOrder;
+  String? submissionError;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -875,13 +1036,27 @@ class _RequestContent extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Text(
-        showSummary ? 'Resumen de tu solicitud' : 'Tus datos',
+        createdOrder != null
+            ? 'Solicitud recibida'
+            : widget.showSummary
+            ? 'Resumen de tu solicitud'
+            : 'Tus datos',
         style: Theme.of(context).textTheme.headlineMedium,
       ),
       const SizedBox(height: 18),
-      if (!showSummary) ...[
+      if (createdOrder != null) ...[
+        const Icon(Icons.check_circle, size: 56, color: AppTheme.green),
+        const SizedBox(height: 12),
+        const Text(
+          'Tu solicitud fue creada correctamente.',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        _SummaryRow(label: 'Número', value: createdOrder!.number),
+        const _SummaryRow(label: 'Estado', value: 'Solicitado'),
+      ] else if (!widget.showSummary) ...[
         TextFormField(
-          controller: nameController,
+          controller: widget.nameController,
           textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
             labelText: 'Nombre',
@@ -893,7 +1068,7 @@ class _RequestContent extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         TextFormField(
-          controller: whatsappController,
+          controller: widget.whatsappController,
           keyboardType: TextInputType.phone,
           decoration: const InputDecoration(
             labelText: 'Número de WhatsApp',
@@ -901,64 +1076,134 @@ class _RequestContent extends StatelessWidget {
             border: OutlineInputBorder(),
           ),
           validator: (value) {
-            final normalized = _normalizePhone(value ?? '');
+            final normalized = ColombianMobileNumber.normalize(value ?? '');
             if (normalized.isEmpty) return 'Ingresa tu número de WhatsApp.';
-            if (!RegExp(r'^\d{8,15}$').hasMatch(normalized)) {
-              return 'Usa entre 8 y 15 dígitos, incluido el código del país.';
-            }
             return null;
           },
         ),
+        const SizedBox(height: 8),
+        FormField<bool>(
+          initialValue: false,
+          validator: (value) =>
+              value == true ? null : 'Debes autorizar el tratamiento de datos.',
+          builder: (field) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: acceptsDataProcessing,
+                onChanged: (value) {
+                  setState(() => acceptsDataProcessing = value ?? false);
+                  field.didChange(value ?? false);
+                },
+                title: const Text(
+                  'Autorizo el tratamiento de mis datos para gestionar esta solicitud.',
+                ),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              if (field.hasError)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Text(
+                    field.errorText!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
         const SizedBox(height: 20),
         FilledButton(
-          onPressed: onReview,
+          onPressed: widget.onReview,
           child: const Text('Revisar mi solicitud'),
         ),
       ] else ...[
-        _SummaryRow(label: 'Cliente', value: nameController.text.trim()),
+        _SummaryRow(label: 'Cliente', value: widget.nameController.text.trim()),
         _SummaryRow(
           label: 'WhatsApp',
-          value: _normalizePhone(whatsappController.text),
+          value: ColombianMobileNumber.normalize(
+            widget.whatsappController.text,
+          ),
         ),
-        _SummaryRow(label: 'Producto', value: product.name),
-        _SummaryRow(label: 'Presentación', value: product.presentation),
-        _SummaryRow(label: 'Código/SKU', value: product.code),
+        _SummaryRow(label: 'Producto', value: widget.product.name),
+        _SummaryRow(label: 'Presentación', value: widget.product.presentation),
+        _SummaryRow(label: 'Código/SKU', value: widget.product.code),
         const _SummaryRow(label: 'Cantidad', value: '1'),
         _SummaryRow(
           label: 'Precio',
-          value: _ProductCard.priceLabel(product.priceCop),
+          value: _ProductCard.priceLabel(widget.product.priceCop),
         ),
+        for (final item in widget.selection.complementaries)
+          _SummaryRow(
+            label: 'Complemento',
+            value:
+                '${item.productName} · ${_ProductCard.priceLabel(item.originalUnitPriceCop)}',
+          ),
         _SummaryRow(
           label: 'Subtotal',
-          value: _ProductCard.priceLabel(product.priceCop),
+          value: _ProductCard.priceLabel(widget.selection.amounts.subtotalCop),
         ),
         const _SummaryRow(label: 'Descuento', value: r'$0 COP'),
         const _SummaryRow(label: 'Entrega/envío', value: 'Por confirmar'),
         _SummaryRow(
           label: 'Total productos',
-          value: _ProductCard.priceLabel(product.priceCop),
+          value: _ProductCard.priceLabel(widget.selection.amounts.totalCop),
         ),
         const _SummaryRow(label: 'Asesor', value: AppConfig.advisorName),
-        const _SummaryRow(label: 'Canal', value: 'No conectado'),
-        const _SummaryRow(label: 'Campaña', value: 'No conectada'),
+        _SummaryRow(label: 'Canal', value: widget.attribution.channelId),
+        _SummaryRow(
+          label: 'Campaña',
+          value: widget.attribution.campaignId ?? 'Sin campaña',
+        ),
         const SizedBox(height: 20),
         FilledButton.icon(
-          onPressed: null,
+          onPressed: widget.orderSubmissionConfigured && !submitting
+              ? _submit
+              : null,
           icon: const Icon(Icons.send_outlined),
-          label: const Text('Enviar mi solicitud'),
+          label: Text(submitting ? 'Enviando…' : 'Enviar mi solicitud'),
         ),
-        const SizedBox(height: 10),
-        const Text(
-          'La creación directa del pedido no está disponible en esta versión local del repositorio.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Color(0xFF7A4E00)),
-        ),
+        if (!widget.orderSubmissionConfigured) ...[
+          const SizedBox(height: 10),
+          const Text(
+            'Supabase Local no está configurado para esta ejecución.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF7A4E00)),
+          ),
+        ],
+        if (submissionError != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            submissionError!,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
       ],
     ],
   );
 
-  static String _normalizePhone(String value) =>
-      value.replaceAll(RegExp(r'[^0-9]'), '');
+  Future<void> _submit() async {
+    setState(() {
+      submitting = true;
+      submissionError = null;
+    });
+    try {
+      final order = await widget.onSubmit();
+      if (mounted) setState(() => createdOrder = order);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => submissionError = 'No fue posible crear la solicitud: $error',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => submitting = false);
+    }
+  }
 }
 
 class _SummaryRow extends StatelessWidget {

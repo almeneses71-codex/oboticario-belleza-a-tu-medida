@@ -1,10 +1,21 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 
+import '../domain/cross_sell_engine.dart';
+import '../domain/models/attribution_context.dart';
+import '../domain/models/cross_sell_relation.dart';
+import '../domain/models/cross_sell_result.dart';
+import '../domain/models/customer_draft.dart';
+import '../domain/models/order.dart';
+import '../domain/models/order_selection.dart';
 import '../domain/models/product.dart';
 import '../domain/models/question.dart';
 import '../domain/models/recommendation_result.dart';
 import '../domain/recommendation_engine.dart';
 import '../domain/repositories/catalog_repository.dart';
+import '../domain/repositories/cross_sell_repository.dart';
+import '../domain/repositories/order_repository.dart';
 import '../services/analytics_service.dart';
 
 enum AppStage { welcome, categories, questionnaire, processing, result }
@@ -12,18 +23,33 @@ enum AppStage { welcome, categories, questionnaire, processing, result }
 class AppController extends ChangeNotifier {
   AppController({
     required CatalogRepository repository,
+    required CrossSellRepository crossSellRepository,
+    required OrderRepository? orderRepository,
     required AnalyticsService analytics,
     RecommendationEngine engine = const RecommendationEngine(),
+    CrossSellEngine crossSellEngine = const CrossSellEngine(),
+    AttributionContext? attribution,
   }) : _repository = repository,
+       _crossSellRepository = crossSellRepository,
+       _orderRepository = orderRepository,
        _analytics = analytics,
-       _engine = engine;
+       _engine = engine,
+       _crossSellEngine = crossSellEngine,
+       attribution = attribution ?? AttributionContext.fromUri(Uri.base),
+       journeyId = _newJourneyId();
 
   final CatalogRepository _repository;
+  final CrossSellRepository _crossSellRepository;
+  final OrderRepository? _orderRepository;
   final AnalyticsService _analytics;
   final RecommendationEngine _engine;
+  final CrossSellEngine _crossSellEngine;
+  final AttributionContext attribution;
+  final String journeyId;
 
   List<Product> products = const [];
   List<Question> questions = const [];
+  List<CrossSellRelation> crossSellRelations = const [];
   AppStage stage = AppStage.welcome;
   String? selectedCategory;
   int questionIndex = 0;
@@ -36,6 +62,7 @@ class AppController extends ChangeNotifier {
     try {
       products = await _repository.loadProducts();
       questions = await _repository.loadQuestions();
+      crossSellRelations = await _crossSellRepository.loadRelations();
       _validateData();
       await _analytics.recordAppOpen();
     } catch (exception) {
@@ -144,6 +171,56 @@ class AppController extends ChangeNotifier {
   Future<void> recordWhatsappClick(String? productId) =>
       _analytics.recordWhatsappClick(productId);
 
+  bool get orderSubmissionConfigured => _orderRepository?.isConfigured == true;
+
+  CrossSellResult crossSellFor(Product product) => _crossSellEngine.recommend(
+    primary: product,
+    products: products,
+    relations: crossSellRelations,
+  );
+
+  Future<void> recordCrossSellShown(CrossSellCandidate candidate) =>
+      _analytics.recordCrossSellShown(
+        journeyId: journeyId,
+        primaryProductId: candidate.relation.sourceProductId,
+        complementaryProductId: candidate.product.id,
+        relationId: candidate.relation.id,
+        attribution: attribution,
+      );
+
+  Future<void> recordComplementaryChanged({
+    required CrossSellCandidate candidate,
+    required bool added,
+  }) => _analytics.recordComplementaryChanged(
+    journeyId: journeyId,
+    added: added,
+    primaryProductId: candidate.relation.sourceProductId,
+    complementaryProductId: candidate.product.id,
+    relationId: candidate.relation.id,
+    attribution: attribution,
+  );
+
+  Future<CreatedOrder> createOrder({
+    required CustomerDraft customer,
+    required OrderSelection selection,
+  }) async {
+    final repository = _orderRepository;
+    if (repository == null || !repository.isConfigured) {
+      throw const OrderSubmissionUnavailable();
+    }
+    return repository.createOrder(
+      OrderDraft(
+        journeyId: journeyId,
+        customer: customer,
+        attribution: attribution,
+        items: selection.items,
+        amounts: selection.amounts,
+        shippingStatus: ShippingStatus.pendingQuote,
+        requiresDelivery: true,
+      ),
+    );
+  }
+
   void _validateData() {
     final ids = products.map((item) => item.id).toList();
     if (ids.toSet().length != ids.length) {
@@ -170,5 +247,13 @@ class AppController extends ChangeNotifier {
         throw FormatException('$category no contiene exactamente 5 preguntas.');
       }
     }
+  }
+
+  static String _newJourneyId() {
+    final random = Random.secure();
+    return List.generate(
+      32,
+      (_) => random.nextInt(16).toRadixString(16),
+    ).join();
   }
 }
