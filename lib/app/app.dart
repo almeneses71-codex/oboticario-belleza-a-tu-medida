@@ -1215,6 +1215,34 @@ class _RequestContentState extends State<_RequestContent> {
           child: const Text('Revisar mi solicitud'),
         ),
       ] else ...[
+        if (wheelBenefit != null) ...[
+          Container(
+            key: const Key('wheel-benefit-banner'),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF6EF),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFB7DCC7)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.celebration, color: AppTheme.green, size: 30),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '¡Felicidades! Ganaste ${wheelBenefit!.discountPercent}% de descuento',
+                    style: const TextStyle(
+                      color: AppTheme.green,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         _SummaryRow(label: 'Cliente', value: widget.nameController.text.trim()),
         _SummaryRow(
           label: 'WhatsApp',
@@ -1222,31 +1250,18 @@ class _RequestContentState extends State<_RequestContent> {
             widget.whatsappController.text,
           ),
         ),
-        for (final item in widget.selection.items) ..._itemSummary(item),
-        _SummaryRow(
-          label: 'Productos',
-          value: _ProductCard.priceLabel(
-            wheelBenefit?.productsCop ?? widget.selection.amounts.subtotalCop,
-          ),
-        ),
-        if (wheelBenefit != null) ...[
-          _SummaryRow(
-            label:
-                'Descuento Amor y Amistad (${wheelBenefit!.discountPercent}%)',
-            value: '-${_ProductCard.priceLabel(wheelBenefit!.discountCop)}',
-          ),
-          _SummaryRow(
-            label: 'Venta neta de productos',
-            value: _ProductCard.priceLabel(wheelBenefit!.netProductsCop),
-          ),
-        ] else if (!widget.wheelCampaignActive)
-          const _SummaryRow(label: 'Descuento', value: r'$0 COP'),
-        const _SummaryRow(label: 'Entrega/envío', value: 'Por confirmar'),
-        _SummaryRow(
-          label: 'TOTAL',
-          value: _ProductCard.priceLabel(
-            wheelBenefit?.netProductsCop ?? widget.selection.amounts.totalCop,
-          ),
+        const SizedBox(height: 12),
+        for (final item in widget.selection.items) ...[
+          _SummaryProductCard(item: item, product: _productFor(item.productId)),
+          const SizedBox(height: 12),
+        ],
+        _SummaryTotalsCard(
+          subtotalCop:
+              wheelBenefit?.productsCop ?? widget.selection.amounts.subtotalCop,
+          discountPercent: wheelBenefit?.discountPercent,
+          discountCop: wheelBenefit?.discountCop ?? 0,
+          netProductsCop:
+              wheelBenefit?.netProductsCop ?? widget.selection.amounts.totalCop,
         ),
         const _SummaryRow(label: 'Asesor', value: AppConfig.advisorName),
         _SummaryRow(label: 'Canal', value: widget.attribution.channelId),
@@ -1266,16 +1281,6 @@ class _RequestContentState extends State<_RequestContent> {
             onPressed: spinning ? null : _spin,
             icon: const Icon(Icons.casino_outlined),
             label: Text(spinning ? 'Girando…' : 'Girar ruleta'),
-          ),
-          const SizedBox(height: 12),
-        ] else if (wheelBenefit != null) ...[
-          Text(
-            '¡Ganaste ${wheelBenefit!.discountPercent}% de descuento!',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.green,
-              fontWeight: FontWeight.w800,
-            ),
           ),
           const SizedBox(height: 12),
         ],
@@ -1309,34 +1314,11 @@ class _RequestContentState extends State<_RequestContent> {
     ],
   );
 
-  List<Widget> _itemSummary(OrderItemDraft item) {
-    Product? product;
+  Product? _productFor(String productId) {
     for (final candidate in widget.products) {
-      if (candidate.id == item.productId) {
-        product = candidate;
-        break;
-      }
+      if (candidate.id == productId) return candidate;
     }
-    final label = switch (item.itemType) {
-      OrderItemType.primary => 'Producto principal',
-      OrderItemType.other => 'Alternativa',
-      OrderItemType.complementary => 'Complemento',
-      OrderItemType.kit => 'Kit',
-    };
-    return [
-      _SummaryRow(label: label, value: item.productName),
-      _SummaryRow(
-        label: 'Presentación',
-        value: product?.presentation ?? 'No especificada',
-      ),
-      _SummaryRow(label: 'Código/SKU', value: item.productCode),
-      _SummaryRow(label: 'Cantidad', value: '${item.quantity}'),
-      _SummaryRow(
-        label: 'Precio unitario',
-        value: _ProductCard.priceLabel(item.originalUnitPriceCop),
-      ),
-      const Divider(),
-    ];
+    return null;
   }
 
   Future<void> _submit() async {
@@ -1378,9 +1360,14 @@ class _RequestContentState extends State<_RequestContent> {
 }
 
 class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({required this.label, required this.value});
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
   final String label;
   final String value;
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -1395,8 +1382,196 @@ class _SummaryRow extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
-        Expanded(child: Text(value)),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: valueColor,
+              fontWeight: valueColor == null ? null : FontWeight.w800,
+            ),
+          ),
+        ),
       ],
+    ),
+  );
+}
+
+class _SummaryProductCard extends StatelessWidget {
+  const _SummaryProductCard({required this.item, required this.product});
+
+  final OrderItemDraft item;
+  final Product? product;
+
+  @override
+  Widget build(BuildContext context) {
+    final typeLabel = switch (item.itemType) {
+      OrderItemType.primary => 'Producto principal',
+      OrderItemType.other => 'Alternativa',
+      OrderItemType.complementary => 'Complemento',
+      OrderItemType.kit => 'Kit',
+    };
+    return Card(
+      key: ValueKey('summary-product-${item.productId}'),
+      color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Color(0xFFE8DED0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: 88,
+                height: 108,
+                child: product == null
+                    ? const ColoredBox(
+                        color: AppTheme.softBlue,
+                        child: Icon(Icons.spa_outlined, color: AppTheme.blue),
+                      )
+                    : Image.asset(
+                        product!.resolvedImagePath,
+                        key: ValueKey('summary-image-${item.productId}'),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const ColoredBox(
+                          color: AppTheme.softBlue,
+                          child: Icon(Icons.spa_outlined, color: AppTheme.blue),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    typeLabel,
+                    style: const TextStyle(
+                      color: AppTheme.green,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.productName,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(product?.presentation ?? 'Presentación no especificada'),
+                  Text('SKU: ${item.productCode} · Cantidad: ${item.quantity}'),
+                  const SizedBox(height: 8),
+                  Text(
+                    _ProductCard.priceLabel(item.originalUnitPriceCop),
+                    style: const TextStyle(
+                      color: AppTheme.green,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryTotalsCard extends StatelessWidget {
+  const _SummaryTotalsCard({
+    required this.subtotalCop,
+    required this.discountPercent,
+    required this.discountCop,
+    required this.netProductsCop,
+  });
+
+  final int subtotalCop;
+  final int? discountPercent;
+  final int discountCop;
+  final int netProductsCop;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    key: const Key('summary-totals-card'),
+    color: const Color(0xFFFFFBF4),
+    elevation: 0,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(20),
+      side: const BorderSide(color: Color(0xFFE3D5BF)),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _SummaryRow(
+            label: 'Subtotal de productos',
+            value: _ProductCard.priceLabel(subtotalCop),
+          ),
+          Container(
+            key: const Key('summary-discount-row'),
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF6EF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: _SummaryRow(
+              label: discountPercent == null
+                  ? 'Descuento'
+                  : 'Descuento Amor y Amistad ($discountPercent%)',
+              value: discountCop == 0
+                  ? r'$0 COP'
+                  : '-${_ProductCard.priceLabel(discountCop)}',
+              valueColor: AppTheme.green,
+            ),
+          ),
+          _SummaryRow(
+            label: 'Venta neta de productos',
+            value: _ProductCard.priceLabel(netProductsCop),
+          ),
+          const Divider(height: 24),
+          const _SummaryRow(label: 'Entrega/envío', value: 'Por confirmar'),
+          const SizedBox(height: 8),
+          Container(
+            key: const Key('summary-total-row'),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1DFC0),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'TOTAL A PAGAR',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _ProductCard.priceLabel(netProductsCop),
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: AppTheme.green,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'El valor del envío se confirmará por separado.',
+            style: TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
     ),
   );
 }

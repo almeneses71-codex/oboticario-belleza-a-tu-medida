@@ -42,8 +42,11 @@ void main() {
       find.descendant(of: firstSummary, matching: find.text('Egeo Dolce EDT')),
       findsOneWidget,
     );
-    expect(find.text('60138'), findsOneWidget);
+    expect(find.textContaining('SKU: 60138'), findsOneWidget);
     expect(find.text('573001234567'), findsOneWidget);
+    expect(find.byKey(const ValueKey('summary-image-OB001')), findsOneWidget);
+    expect(find.byKey(const Key('summary-totals-card')), findsOneWidget);
+    expect(find.text('TOTAL A PAGAR'), findsOneWidget);
     await tester.ensureVisible(find.text('Enviar mi solicitud'));
     await tester.tap(find.text('Enviar mi solicitud'));
     await tester.pumpAndSettle();
@@ -80,7 +83,18 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(of: secondSummary, matching: find.text('Código/SKU')),
+      find.descendant(of: secondSummary, matching: find.textContaining('SKU:')),
+      findsNWidgets(2),
+    );
+    expect(find.byKey(const ValueKey('summary-image-OB001')), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'summary-image-',
+            ),
+      ),
       findsNWidgets(2),
     );
     await tester.ensureVisible(find.text('Enviar mi solicitud'));
