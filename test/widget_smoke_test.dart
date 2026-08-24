@@ -3,6 +3,8 @@ import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/services/local_analytics_service.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/order.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/repositories/order_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -12,7 +14,7 @@ void main() {
       BeautyAdvisorApp(
         repository: const LocalCatalogRepository(),
         crossSellRepository: const LocalCrossSellRepository(),
-        orderRepository: null,
+        orderRepository: _AvailabilityOnlyRepository(),
         analytics: LocalAnalyticsService(),
       ),
     );
@@ -45,4 +47,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pregunta 2 de 5'), findsOneWidget);
   });
+}
+
+class _AvailabilityOnlyRepository
+    implements OrderRepository, ProductAvailabilityRepository {
+  @override
+  bool get isConfigured => false;
+
+  @override
+  Future<Set<String>> loadPurchasableProductIds() async =>
+      (await const LocalCatalogRepository().loadProducts())
+          .map((product) => product.id)
+          .toSet();
+
+  @override
+  Future<CreatedOrder> createOrder(OrderDraft draft) =>
+      throw const OrderSubmissionUnavailable();
 }

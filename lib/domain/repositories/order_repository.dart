@@ -16,6 +16,10 @@ abstract interface class WheelRepository {
   });
 }
 
+abstract interface class ProductAvailabilityRepository {
+  Future<Set<String>> loadPurchasableProductIds();
+}
+
 class OrderSubmissionUnavailable implements Exception {
   const OrderSubmissionUnavailable([
     this.message = 'El servicio de pedidos todavía no está configurado.',

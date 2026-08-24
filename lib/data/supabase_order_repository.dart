@@ -4,13 +4,25 @@ import '../domain/models/order.dart';
 import '../domain/models/customer_draft.dart';
 import '../domain/repositories/order_repository.dart';
 
-class SupabaseOrderRepository implements OrderRepository, WheelRepository {
+class SupabaseOrderRepository
+    implements OrderRepository, WheelRepository, ProductAvailabilityRepository {
   const SupabaseOrderRepository(this._client);
 
   final SupabaseClient _client;
 
   @override
   bool get isConfigured => true;
+
+  @override
+  Future<Set<String>> loadPurchasableProductIds() async {
+    final response = await _client
+        .from('products')
+        .select('id')
+        .eq('active', true)
+        .eq('available', true)
+        .eq('eligible', true);
+    return response.map((row) => row['id'] as String).toSet();
+  }
 
   @override
   Future<WheelCampaignStatus> loadWheelCampaignStatus() async {

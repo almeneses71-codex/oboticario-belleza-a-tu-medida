@@ -61,6 +61,29 @@ class OrderSelection {
 
   bool containsOther(String code) => _others.containsKey(code);
 
+  bool containsAlternative(String productId) =>
+      _others.values.any((item) => item.productId == productId);
+
+  void addAlternative(Product product) {
+    if (product.id == _primary.productId) {
+      throw ArgumentError('El producto ya es la selección principal.');
+    }
+    if (!product.available || !product.eligible || product.isSuggestedKit) {
+      throw ArgumentError('La alternativa no está disponible.');
+    }
+    if (_complementaries.containsKey(product.id)) {
+      throw ArgumentError('El producto ya fue agregado como complementario.');
+    }
+    if (_others.values.any((item) => item.productId != product.id)) {
+      throw StateError('Solo se permite una alternativa recomendada.');
+    }
+    _others[product.code] = _itemFromProduct(product, OrderItemType.other);
+  }
+
+  void removeAlternative(String productId) {
+    _others.removeWhere((_, item) => item.productId == productId);
+  }
+
   void addOther(CatalogMasterItem product) {
     if (!product.canRequest) {
       throw ArgumentError('Este producto no puede solicitarse en esta fase.');

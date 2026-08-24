@@ -31,18 +31,11 @@ class RecommendationEngine {
       0,
       (sum, item) => sum + item.question.weight,
     );
-    if (denominator == 0) return _noMatch;
-
     final ranked = products
         .where((product) {
           return product.category == category &&
               product.available &&
-              product.eligible &&
-              product.priceCop > 0 &&
-              _hasMinimumData(product) &&
-              selections.every(
-                (item) => item.option.ignored || _passes(product, item.option),
-              );
+              product.eligible;
         })
         .map((product) {
           var earned = 0.0;
@@ -62,7 +55,9 @@ class RecommendationEngine {
               reasons.add(selection.option.reason);
             }
           }
-          final score = (earned * 100 / denominator).round();
+          final score = denominator == 0
+              ? 0
+              : (earned * 100 / denominator).round();
           return _Candidate(
             ranked: RankedProduct(
               product: product,
@@ -74,7 +69,6 @@ class RecommendationEngine {
             secondaryMatch: secondaryMatch,
           );
         })
-        .where((item) => item.ranked.score >= 55)
         .toList();
 
     if (ranked.isEmpty) return _noMatch;
@@ -102,7 +96,9 @@ class RecommendationEngine {
           ? RecommendationConfidence.high
           : primary.score >= 70
           ? RecommendationConfidence.good
-          : RecommendationConfidence.moderate,
+          : primary.score >= 55
+          ? RecommendationConfidence.moderate
+          : RecommendationConfidence.low,
     );
   }
 
@@ -142,7 +138,9 @@ class RecommendationEngine {
           ? 40
           : 0;
     }
-    var quality = option.hardFilters.isNotEmpty ? 100 : 0;
+    var quality = option.hardFilters.isNotEmpty && _passes(product, option)
+        ? 100
+        : 0;
     for (final boost in option.boosts) {
       if (boost.queries.any(
         (query) => product.searchableText.contains(query.toLowerCase()),
@@ -152,13 +150,6 @@ class RecommendationEngine {
     }
     return quality;
   }
-
-  bool _hasMinimumData(Product product) =>
-      product.name.trim().isNotEmpty &&
-      product.type.trim().isNotEmpty &&
-      product.need.trim().isNotEmpty &&
-      product.profile.trim().isNotEmpty &&
-      product.moment.trim().isNotEmpty;
 
   int _completeness(Product product) => [
     product.name,

@@ -98,6 +98,33 @@ class _AppShell extends StatelessWidget {
         ),
       );
     }
+    if (!controller.availabilityVerified) {
+      return _PhoneFrame(
+        child: Scaffold(
+          body: _PageFrame(
+            child: _MessageCard(
+              icon: Icons.inventory_2_outlined,
+              title: 'Disponibilidad temporal',
+              message:
+                  controller.availabilityError ??
+                  'Estamos verificando la disponibilidad de nuestros productos. Puedes intentar nuevamente o pedir asesoría.',
+              action: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FilledButton.icon(
+                    onPressed: controller.retryAvailability,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar'),
+                  ),
+                  const SizedBox(height: 10),
+                  _AdvisorButton(controller: controller),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     final canGoBack =
         controller.stage == AppStage.categories ||
@@ -512,7 +539,6 @@ class _ResultScreen extends StatefulWidget {
 }
 
 class _ResultScreenState extends State<_ResultScreen> {
-  Product? selectedProduct;
   OrderSelection? orderSelection;
   CrossSellResult crossSell = const CrossSellResult([]);
 
@@ -551,12 +577,25 @@ class _ResultScreenState extends State<_ResultScreen> {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.headlineMedium,
             ),
+            if (result.confidence == RecommendationConfidence.low) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Esta es la opción que más se acerca a lo que buscas.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'No encontramos una coincidencia exacta con todas tus preferencias, pero esta es la alternativa más cercana dentro del catálogo disponible.',
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 22),
             _ProductCard(
               ranked: primary,
               primary: true,
-              selected: selectedProduct?.id == primary.product.id,
-              onSelect: () => _selectProduct(primary.product),
+              selected: _isSelected(primary.product),
+              onSelect: () => _toggleProduct(primary.product),
             ),
             if (result.alternative != null) ...[
               const SizedBox(height: 22),
@@ -568,8 +607,8 @@ class _ResultScreenState extends State<_ResultScreen> {
               _ProductCard(
                 ranked: result.alternative!,
                 primary: false,
-                selected: selectedProduct?.id == result.alternative!.product.id,
-                onSelect: () => _selectProduct(result.alternative!.product),
+                selected: _isSelected(result.alternative!.product),
+                onSelect: () => _toggleProduct(result.alternative!.product),
               ),
             ],
             if (controller.wheelCampaignActive) ...[
@@ -588,7 +627,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                 ),
               ),
             ],
-            if (selectedProduct != null && crossSell.candidates.isNotEmpty) ...[
+            if (orderSelection != null && crossSell.candidates.isNotEmpty) ...[
               const SizedBox(height: 22),
               Text(
                 'Completa tu elección',
@@ -606,7 +645,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                   onChanged: () => _toggleComplementary(candidate),
                 ),
             ],
-            if (selectedProduct != null) ...[
+            if (orderSelection != null) ...[
               const SizedBox(height: 18),
               FilledButton.icon(
                 onPressed: () => _showRequest(context, orderSelection!),
@@ -643,17 +682,41 @@ class _ResultScreenState extends State<_ResultScreen> {
     );
   }
 
-  void _selectProduct(Product product) {
-    final nextSelection = OrderSelection.fromPrimary(product);
-    final nextCrossSell = controller.crossSellFor(product);
-    setState(() {
-      selectedProduct = product;
-      orderSelection = nextSelection;
-      crossSell = nextCrossSell;
-    });
-    for (final candidate in nextCrossSell.candidates) {
-      controller.recordCrossSellShown(candidate);
+  bool _isSelected(Product product) =>
+      orderSelection?.items.any((item) => item.productId == product.id) == true;
+
+  void _toggleProduct(Product product) {
+    final selection = orderSelection;
+    if (selection == null) {
+      final recommendedPrimary = controller.result!.primary!.product;
+      final nextSelection = OrderSelection.fromPrimary(recommendedPrimary);
+      if (product.id != recommendedPrimary.id) {
+        nextSelection.addAlternative(product);
+      }
+      final nextCrossSell = controller.crossSellFor(recommendedPrimary);
+      setState(() {
+        orderSelection = nextSelection;
+        crossSell = nextCrossSell;
+      });
+      for (final candidate in nextCrossSell.candidates) {
+        controller.recordCrossSellShown(candidate);
+      }
+      return;
     }
+    if (selection.primary.productId == product.id) {
+      setState(() {
+        orderSelection = null;
+        crossSell = const CrossSellResult([]);
+      });
+      return;
+    }
+    setState(() {
+      if (selection.containsAlternative(product.id)) {
+        selection.removeAlternative(product.id);
+      } else {
+        selection.addAlternative(product);
+      }
+    });
   }
 
   void _toggleComplementary(CrossSellCandidate candidate) {
@@ -697,9 +760,7 @@ class _ResultScreenState extends State<_ResultScreen> {
               ),
               child: _RequestContent(
                 selection: selection,
-                product: controller.products.firstWhere(
-                  (item) => item.id == selection.primary.productId,
-                ),
+                products: controller.products,
                 attribution: controller.attribution,
                 nameController: nameController,
                 whatsappController: whatsappController,
@@ -1027,7 +1088,7 @@ class _AdvisorButton extends StatelessWidget {
 class _RequestContent extends StatefulWidget {
   const _RequestContent({
     required this.selection,
-    required this.product,
+    required this.products,
     required this.attribution,
     required this.nameController,
     required this.whatsappController,
@@ -1040,7 +1101,7 @@ class _RequestContent extends StatefulWidget {
   });
 
   final OrderSelection selection;
-  final Product product;
+  final List<Product> products;
   final AttributionContext attribution;
   final TextEditingController nameController;
   final TextEditingController whatsappController;
@@ -1161,20 +1222,7 @@ class _RequestContentState extends State<_RequestContent> {
             widget.whatsappController.text,
           ),
         ),
-        _SummaryRow(label: 'Producto', value: widget.product.name),
-        _SummaryRow(label: 'Presentación', value: widget.product.presentation),
-        _SummaryRow(label: 'Código/SKU', value: widget.product.code),
-        const _SummaryRow(label: 'Cantidad', value: '1'),
-        _SummaryRow(
-          label: 'Precio',
-          value: _ProductCard.priceLabel(widget.product.priceCop),
-        ),
-        for (final item in widget.selection.complementaries)
-          _SummaryRow(
-            label: 'Complemento',
-            value:
-                '${item.productName} · ${_ProductCard.priceLabel(item.originalUnitPriceCop)}',
-          ),
+        for (final item in widget.selection.items) ..._itemSummary(item),
         _SummaryRow(
           label: 'Productos',
           value: _ProductCard.priceLabel(
@@ -1261,7 +1309,38 @@ class _RequestContentState extends State<_RequestContent> {
     ],
   );
 
+  List<Widget> _itemSummary(OrderItemDraft item) {
+    Product? product;
+    for (final candidate in widget.products) {
+      if (candidate.id == item.productId) {
+        product = candidate;
+        break;
+      }
+    }
+    final label = switch (item.itemType) {
+      OrderItemType.primary => 'Producto principal',
+      OrderItemType.other => 'Alternativa',
+      OrderItemType.complementary => 'Complemento',
+      OrderItemType.kit => 'Kit',
+    };
+    return [
+      _SummaryRow(label: label, value: item.productName),
+      _SummaryRow(
+        label: 'Presentación',
+        value: product?.presentation ?? 'No especificada',
+      ),
+      _SummaryRow(label: 'Código/SKU', value: item.productCode),
+      _SummaryRow(label: 'Cantidad', value: '${item.quantity}'),
+      _SummaryRow(
+        label: 'Precio unitario',
+        value: _ProductCard.priceLabel(item.originalUnitPriceCop),
+      ),
+      const Divider(),
+    ];
+  }
+
   Future<void> _submit() async {
+    if (submitting) return;
     setState(() {
       submitting = true;
       submissionError = null;

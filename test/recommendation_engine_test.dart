@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/recommendation_engine.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/recommendation_result.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -45,14 +46,18 @@ void main() {
     expect(result.primary.score, 100);
   });
 
-  test('facial ojeras reports no match when catalog has no evidence', () async {
+  test('score below 55 still returns the closest facial products', () async {
     final result = await recommend('facial', const {
       'fac_necesidad': 'ojeras',
       'fac_piel': 'no_seguro',
       'fac_resultado': 'descansada',
       'fac_rutina': 'no_seguro',
     });
-    expect(result.hasMatch, isFalse);
+    expect(result.hasMatch, isTrue);
+    expect(result.primary.score, lessThan(55));
+    expect(result.primary.product.category, 'facial');
+    expect(result.alternative, isNotNull);
+    expect(result.confidence, RecommendationConfidence.low);
   });
 
   test('ineligible product never enters facial ranking', () async {
@@ -86,6 +91,33 @@ void main() {
       expect(hair.hasMatch, isTrue);
       expect(giftA.hasMatch, isTrue);
       expect(giftA.primary.product.id, giftB.primary.product.id);
+    },
+  );
+
+  test('real Xiaomi hair answers always stay inside hair category', () async {
+    final result = await recommend('cabello', const {
+      'cab_necesidad': 'nutricion',
+      'cab_tipo': 'rubio',
+      'cab_secundaria': 'crecimiento',
+      'cab_rutina': 'finalizacion',
+    });
+    expect(result.hasMatch, isTrue);
+    expect(result.primary.product.id, 'OB063');
+    expect(result.primary.product.category, 'cabello');
+    expect(result.alternative?.product.category, 'cabello');
+  });
+
+  test(
+    'never falls back to another category when no valid candidate exists',
+    () async {
+      final products = await repository.loadProducts();
+      final result = engine.recommend(
+        category: 'facial',
+        products: products.where((item) => item.category != 'facial').toList(),
+        questions: await repository.loadQuestions(),
+        answers: const {},
+      );
+      expect(result.hasMatch, isFalse);
     },
   );
 }

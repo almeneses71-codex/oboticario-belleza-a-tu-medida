@@ -45,9 +45,10 @@ class AppController extends ChangeNotifier {
   final RecommendationEngine _engine;
   final CrossSellEngine _crossSellEngine;
   final AttributionContext attribution;
-  final String journeyId;
+  String journeyId;
 
   List<Product> products = const [];
+  List<Product> _localProducts = const [];
   List<Question> questions = const [];
   List<CrossSellRelation> crossSellRelations = const [];
   AppStage stage = AppStage.welcome;
@@ -58,10 +59,13 @@ class AppController extends ChangeNotifier {
   bool loading = true;
   String? error;
   bool wheelCampaignActive = false;
+  bool availabilityVerified = false;
+  String? availabilityError;
 
   Future<void> initialize() async {
     try {
-      products = await _repository.loadProducts();
+      _localProducts = await _repository.loadProducts();
+      products = _localProducts;
       questions = await _repository.loadQuestions();
       crossSellRelations = await _crossSellRepository.loadRelations();
       final wheelRepository = _orderRepository;
@@ -72,6 +76,7 @@ class AppController extends ChangeNotifier {
                 .active;
       }
       _validateData();
+      await _syncAvailability();
       await _analytics.recordAppOpen();
     } catch (exception) {
       error = 'No fue posible cargar el catálogo: $exception';
@@ -121,6 +126,7 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (!await _syncAvailability()) return;
     stage = AppStage.processing;
     notifyListeners();
     // Yield once so the processing state can render without adding a delay.
@@ -156,6 +162,7 @@ class AppController extends ChangeNotifier {
   }
 
   void restart() {
+    journeyId = _newJourneyId();
     selectedCategory = null;
     questionIndex = 0;
     answers.clear();
@@ -181,10 +188,23 @@ class AppController extends ChangeNotifier {
 
   bool get orderSubmissionConfigured => _orderRepository?.isConfigured == true;
 
+  Future<void> retryAvailability() async {
+    loading = true;
+    notifyListeners();
+    await _syncAvailability();
+    loading = false;
+    notifyListeners();
+  }
+
   Future<WheelBenefit> spinWheel({
     required CustomerDraft customer,
     required OrderSelection selection,
-  }) {
+  }) async {
+    if (!await _syncAvailability() || !_selectionIsPurchasable(selection)) {
+      throw const OrderSubmissionUnavailable(
+        'Estamos verificando la disponibilidad de nuestros productos.',
+      );
+    }
     final repository = _orderRepository;
     if (repository == null ||
         repository is! WheelRepository ||
@@ -234,6 +254,11 @@ class AppController extends ChangeNotifier {
     if (repository == null || !repository.isConfigured) {
       throw const OrderSubmissionUnavailable();
     }
+    if (!await _syncAvailability() || !_selectionIsPurchasable(selection)) {
+      throw const OrderSubmissionUnavailable(
+        'Uno de los productos ya no está disponible. Actualiza tu selección.',
+      );
+    }
     return repository.createOrder(
       OrderDraft(
         journeyId: journeyId,
@@ -245,6 +270,41 @@ class AppController extends ChangeNotifier {
         requiresDelivery: true,
       ),
     );
+  }
+
+  bool _selectionIsPurchasable(OrderSelection selection) => selection.items
+      .every((item) => products.any((product) => product.id == item.productId));
+
+  Future<bool> _syncAvailability() async {
+    final repository = _orderRepository;
+    if (repository == null || repository is! ProductAvailabilityRepository) {
+      products = const [];
+      availabilityVerified = false;
+      availabilityError =
+          'Estamos verificando la disponibilidad de nuestros productos. '
+          'Puedes intentar nuevamente o pedir asesoría.';
+      notifyListeners();
+      return false;
+    }
+    try {
+      final ids = await (repository as ProductAvailabilityRepository)
+          .loadPurchasableProductIds();
+      products = _localProducts
+          .where((product) => ids.contains(product.id))
+          .toList(growable: false);
+      availabilityVerified = true;
+      availabilityError = null;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      products = const [];
+      availabilityVerified = false;
+      availabilityError =
+          'Estamos verificando la disponibilidad de nuestros productos. '
+          'Puedes intentar nuevamente o pedir asesoría.';
+      notifyListeners();
+      return false;
+    }
   }
 
   void _validateData() {

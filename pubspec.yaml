@@ -28,4 +28,6 @@ flutter:
     - assets/data/questionnaire.json
     - assets/data/scoring_rules.json
     - assets/data/cross_sell_relations.json
+    - data/catalog_master_august_2026.json
     - assets/images/products/
+    - assets/images/welcome/

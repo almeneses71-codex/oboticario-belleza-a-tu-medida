@@ -77,16 +77,19 @@ void main() {
     final secondSummary = find.byType(BottomSheet);
     expect(
       find.descendant(of: secondSummary, matching: find.text('Egeo Dolce EDT')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.descendant(of: secondSummary, matching: find.text('Código/SKU')),
-      findsOneWidget,
+      findsNWidgets(2),
     );
     await tester.ensureVisible(find.text('Enviar mi solicitud'));
     await tester.tap(find.text('Enviar mi solicitud'));
     await tester.pumpAndSettle();
-    expect(orders.draft!.items.single.productId, isNot('OB001'));
+    expect(orders.draft!.items, hasLength(2));
+    expect(orders.draft!.items.first.productId, 'OB001');
+    expect(orders.draft!.items.first.itemType, OrderItemType.primary);
+    expect(orders.draft!.items.last.itemType, OrderItemType.other);
   });
 }
 
@@ -126,11 +129,18 @@ Future<void> _openPerfumeResult(
   }
 }
 
-class _FakeOrderRepository implements OrderRepository {
+class _FakeOrderRepository
+    implements OrderRepository, ProductAvailabilityRepository {
   OrderDraft? draft;
 
   @override
   bool get isConfigured => true;
+
+  @override
+  Future<Set<String>> loadPurchasableProductIds() async =>
+      (await const LocalCatalogRepository().loadProducts())
+          .map((product) => product.id)
+          .toSet();
 
   @override
   Future<CreatedOrder> createOrder(OrderDraft draft) async {
