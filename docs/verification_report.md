@@ -2,7 +2,7 @@
 
 Fecha de verificación inicial: 2026-08-09
 
-Versión del código: 0.3.2+5
+Versión del código: 0.3.4+8
 
 ## Verificaciones ejecutadas en el entorno de construcción
 
@@ -29,9 +29,13 @@ Versión del código: 0.3.2+5
 - La prueba integral fue ejecutada en el emulador Android 36 `medium_phone`: recorrido completo aprobado.
 - La revisión visual en 1080 x 2400 confirmó bienvenida legible, controles completos y ausencia de desbordamientos.
 - La prueba en el emulador detectó y permitió corregir el bloqueo del recomendador cuando Supabase no está configurado. El modo local ahora recomienda con el catálogo incluido y mantiene desactivado solamente el registro remoto de solicitudes.
-- Las pruebas pgTAP no se ejecutaron en este equipo porque Docker Desktop no está instalado o activo. La CLI Supabase 2.114.0 detectó correctamente esa ausencia.
+- Las 40 migraciones fueron aplicadas correctamente al proyecto remoto de Supabase.
+- El APK conectado al proyecto remoto fue instalado y probado en el emulador Android 36.
+- La campaña Amor y Amistad 2026 apareció, permitió un giro real, otorgó 5 % de descuento y registró la solicitud de prueba `OBM-260826-WEB-0001`.
+- Durante la prueba se corrigió el precio local de Egeo Dolce y Egeo Choc High para igualarlo al precio protegido por el servidor ($156.900 COP).
+- Las pruebas pgTAP remotas quedaron pendientes porque la extensión `pgtap` no está disponible en el proyecto alojado. La lógica principal fue validada mediante el flujo integral contra Supabase.
 
-Las pruebas pgTAP deben verificarse con Supabase local antes de publicar; no impiden conservar este cierre como candidato de piloto técnico.
+Las pruebas pgTAP deben verificarse en un entorno local con la extensión disponible antes de publicar; no impiden conservar este cierre como candidato de piloto técnico.
 
 ## Registro histórico de validación pendiente
 
