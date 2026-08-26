@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../domain/models/product.dart';
@@ -112,7 +114,9 @@ class _AppShell extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   FilledButton.icon(
-                    onPressed: controller.retryAvailability,
+                    onPressed: () async {
+                      await controller.retryAvailability();
+                    },
                     icon: const Icon(Icons.refresh),
                     label: const Text('Reintentar'),
                   ),
@@ -772,15 +776,18 @@ class _ResultScreenState extends State<_ResultScreen> {
                     setSheetState(() => showSummary = true);
                   }
                 },
-                onSubmit: () async {
+                onSubmit: (requiresDelivery, deliveryDetails) async {
                   final created = await controller.createOrder(
                     customer: CustomerDraft(
                       name: nameController.text,
                       whatsapp: whatsappController.text,
+                      city: deliveryDetails?.city,
                       acceptsDataProcessing: true,
                       acceptsPromotions: false,
                     ),
                     selection: selection,
+                    requiresDelivery: requiresDelivery,
+                    deliveryDetails: deliveryDetails,
                   );
                   return created;
                 },
@@ -793,6 +800,33 @@ class _ResultScreenState extends State<_ResultScreen> {
                   ),
                   selection: selection,
                 ),
+                onContinueWhatsApp: (order, deliveryLabel) async {
+                  await controller.recordWhatsappClick(
+                    selection.primary.productId,
+                  );
+                  const service = WhatsAppLinkService();
+                  final opened = await service.launch(
+                    service.buildOrderUri(
+                      orderNumber: order.number,
+                      customerName: nameController.text.trim(),
+                      productNames: selection.items.map(
+                        (item) => item.productName,
+                      ),
+                      deliveryMethod: deliveryLabel,
+                    ),
+                  );
+                  if (!opened && sheetContext.mounted) {
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
+                      const SnackBar(
+                        content: Text('No fue posible abrir WhatsApp.'),
+                      ),
+                    );
+                  }
+                },
+                onNewPurchase: () {
+                  Navigator.pop(sheetContext);
+                  controller.startNewPurchase();
+                },
               ),
             ),
           );
@@ -1098,6 +1132,8 @@ class _RequestContent extends StatefulWidget {
     required this.onReview,
     required this.onSubmit,
     required this.onSpin,
+    required this.onContinueWhatsApp,
+    required this.onNewPurchase,
   });
 
   final OrderSelection selection;
@@ -1109,20 +1145,56 @@ class _RequestContent extends StatefulWidget {
   final bool orderSubmissionConfigured;
   final bool wheelCampaignActive;
   final VoidCallback onReview;
-  final Future<CreatedOrder> Function() onSubmit;
+  final Future<CreatedOrder> Function(
+    bool requiresDelivery,
+    DeliveryDetails? deliveryDetails,
+  )
+  onSubmit;
   final Future<WheelBenefit> Function() onSpin;
+  final Future<void> Function(CreatedOrder order, String deliveryLabel)
+  onContinueWhatsApp;
+  final VoidCallback onNewPurchase;
 
   @override
   State<_RequestContent> createState() => _RequestContentState();
 }
 
-class _RequestContentState extends State<_RequestContent> {
+class _RequestContentState extends State<_RequestContent>
+    with SingleTickerProviderStateMixin {
   bool acceptsDataProcessing = false;
   bool submitting = false;
   CreatedOrder? createdOrder;
   String? submissionError;
   bool spinning = false;
   WheelBenefit? wheelBenefit;
+  WheelBenefit? spinningBenefit;
+  bool? requiresDelivery;
+  final cityController = TextEditingController();
+  final addressController = TextEditingController();
+  final neighborhoodController = TextEditingController();
+  final recipientController = TextEditingController();
+  final directionsController = TextEditingController();
+  late final AnimationController _wheelController;
+
+  @override
+  void initState() {
+    super.initState();
+    _wheelController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+  }
+
+  @override
+  void dispose() {
+    _wheelController.dispose();
+    cityController.dispose();
+    addressController.dispose();
+    neighborhoodController.dispose();
+    recipientController.dispose();
+    directionsController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -1131,7 +1203,7 @@ class _RequestContentState extends State<_RequestContent> {
     children: [
       Text(
         createdOrder != null
-            ? 'Solicitud recibida'
+            ? '¡Solicitud recibida!'
             : widget.showSummary
             ? 'Resumen de tu solicitud'
             : 'Tus datos',
@@ -1139,15 +1211,103 @@ class _RequestContentState extends State<_RequestContent> {
       ),
       const SizedBox(height: 18),
       if (createdOrder != null) ...[
-        const Icon(Icons.check_circle, size: 56, color: AppTheme.green),
+        const Icon(Icons.check_circle, size: 62, color: AppTheme.green),
         const SizedBox(height: 12),
         const Text(
-          'Tu solicitud fue creada correctamente.',
+          'Tu selección quedó registrada correctamente.',
           textAlign: TextAlign.center,
         ),
+        const SizedBox(height: 16),
+        Container(
+          key: const Key('final-order-number'),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1DFC0),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            children: [
+              const Text(
+                'SOLICITUD',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              Text(
+                createdOrder!.number,
+                style: const TextStyle(
+                  color: AppTheme.green,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 12),
-        _SummaryRow(label: 'Número', value: createdOrder!.number),
-        const _SummaryRow(label: 'Estado', value: 'Solicitado'),
+        const _FinalInfoCard(
+          icon: Icons.people_alt_outlined,
+          title: 'TUS ASESORES',
+          headline: AppConfig.advisorName,
+          message:
+              'Revisaremos los detalles de tu solicitud y coordinaremos contigo la entrega de tu pedido.',
+        ),
+        const SizedBox(height: 12),
+        const _FinalInfoCard(
+          icon: Icons.chat_outlined,
+          title: '¿QUÉ SIGUE?',
+          headline: 'Te contactaremos por WhatsApp',
+          message:
+              'Confirmaremos los detalles de tu pedido. Si no podemos responder de inmediato, tu solicitud ya quedó registrada y la atenderemos en el menor tiempo posible.',
+        ),
+        const SizedBox(height: 12),
+        Card(
+          color: const Color(0xFFFFFBF4),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                _SummaryRow(label: 'Entrega', value: _deliveryLabel),
+                _SummaryRow(
+                  label: 'Productos',
+                  value: _ProductCard.priceLabel(
+                    wheelBenefit?.productsCop ??
+                        widget.selection.amounts.subtotalCop,
+                  ),
+                ),
+                if (wheelBenefit != null)
+                  _SummaryRow(
+                    label: 'Descuento',
+                    value:
+                        '-${_ProductCard.priceLabel(wheelBenefit!.discountCop)}',
+                    valueColor: AppTheme.green,
+                  ),
+                _SummaryRow(
+                  label: 'Total',
+                  value: _ProductCard.priceLabel(
+                    wheelBenefit?.netProductsCop ??
+                        widget.selection.amounts.totalCop,
+                  ),
+                  valueColor: AppTheme.green,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          key: const Key('final-whatsapp-button'),
+          onPressed: AppConfig.whatsappConfigured
+              ? () => widget.onContinueWhatsApp(createdOrder!, _deliveryLabel)
+              : null,
+          icon: const Icon(Icons.chat),
+          label: const Text('Continuar por WhatsApp'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          key: const Key('new-purchase-button'),
+          onPressed: widget.onNewPurchase,
+          icon: const Icon(Icons.restart_alt),
+          label: const Text('Realizar otra compra'),
+        ),
       ] else if (!widget.showSummary) ...[
         TextFormField(
           controller: widget.nameController,
@@ -1215,6 +1375,25 @@ class _RequestContentState extends State<_RequestContent> {
           child: const Text('Revisar mi solicitud'),
         ),
       ] else ...[
+        if (widget.wheelCampaignActive) ...[
+          Container(
+            key: const Key('wheel-campaign-banner'),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.green,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Text(
+              '🎁 Campaña Amor y Amistad 2026',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         if (wheelBenefit != null) ...[
           Container(
             key: const Key('wheel-benefit-banner'),
@@ -1241,20 +1420,73 @@ class _RequestContentState extends State<_RequestContent> {
               ],
             ),
           ),
+          const SizedBox(height: 10),
+        ],
+        if (widget.wheelCampaignActive && wheelBenefit == null) ...[
+          if (spinningBenefit != null)
+            _SpinningWheel(
+              controller: _wheelController,
+              targetPercent: spinningBenefit!.discountPercent,
+            )
+          else
+            _ReadyWheel(onSpin: spinning ? null : _spin, waiting: spinning),
           const SizedBox(height: 16),
         ],
-        _SummaryRow(label: 'Cliente', value: widget.nameController.text.trim()),
-        _SummaryRow(
-          label: 'WhatsApp',
-          value: ColombianMobileNumber.normalize(
-            widget.whatsappController.text,
-          ),
-        ),
-        const SizedBox(height: 12),
         for (final item in widget.selection.items) ...[
           _SummaryProductCard(item: item, product: _productFor(item.productId)),
           const SizedBox(height: 12),
         ],
+        Text(
+          '¿Cómo quieres recibir tu pedido?',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        RadioGroup<bool>(
+          groupValue: requiresDelivery,
+          onChanged: spinning || submitting
+              ? (_) {}
+              : (value) => setState(() => requiresDelivery = value),
+          child: const Column(
+            children: [
+              RadioListTile<bool>(
+                value: true,
+                title: Text('Envío a domicilio'),
+                subtitle: Text('El costo del envío está por confirmar.'),
+              ),
+              RadioListTile<bool>(
+                value: false,
+                title: Text('Acordar entrega con asesor'),
+              ),
+            ],
+          ),
+        ),
+        if (requiresDelivery == true) ...[
+          _DeliveryField(
+            controller: cityController,
+            label: 'Ciudad/municipio',
+            onChanged: (_) => setState(() {}),
+          ),
+          _DeliveryField(
+            controller: addressController,
+            label: 'Dirección',
+            onChanged: (_) => setState(() {}),
+          ),
+          _DeliveryField(
+            controller: neighborhoodController,
+            label: 'Barrio',
+            onChanged: (_) => setState(() {}),
+          ),
+          _DeliveryField(
+            controller: recipientController,
+            label: 'Nombre de quien recibe',
+            onChanged: (_) => setState(() {}),
+          ),
+          _DeliveryField(
+            controller: directionsController,
+            label: 'Referencia/indicaciones (opcional)',
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+        const SizedBox(height: 14),
         _SummaryTotalsCard(
           subtotalCop:
               wheelBenefit?.productsCop ?? widget.selection.amounts.subtotalCop,
@@ -1263,31 +1495,13 @@ class _RequestContentState extends State<_RequestContent> {
           netProductsCop:
               wheelBenefit?.netProductsCop ?? widget.selection.amounts.totalCop,
         ),
-        const _SummaryRow(label: 'Asesor', value: AppConfig.advisorName),
-        _SummaryRow(label: 'Canal', value: widget.attribution.channelId),
-        _SummaryRow(
-          label: 'Campaña',
-          value: widget.attribution.campaignId ?? 'Sin campaña',
-        ),
-        const SizedBox(height: 20),
-        if (widget.wheelCampaignActive && wheelBenefit == null) ...[
-          const Text(
-            '¡Es momento de descubrir tu beneficio!',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed: spinning ? null : _spin,
-            icon: const Icon(Icons.casino_outlined),
-            label: Text(spinning ? 'Girando…' : 'Girar ruleta'),
-          ),
-          const SizedBox(height: 12),
-        ],
+        const SizedBox(height: 16),
         FilledButton.icon(
+          key: const Key('submit-order-button'),
           onPressed:
               widget.orderSubmissionConfigured &&
                   !submitting &&
+                  _deliveryIsComplete &&
                   (!widget.wheelCampaignActive || wheelBenefit != null)
               ? _submit
               : null,
@@ -1328,13 +1542,24 @@ class _RequestContentState extends State<_RequestContent> {
       submissionError = null;
     });
     try {
-      final order = await widget.onSubmit();
+      final order = await widget.onSubmit(
+        requiresDelivery!,
+        requiresDelivery == true
+            ? DeliveryDetails(
+                city: cityController.text,
+                address: addressController.text,
+                neighborhood: neighborhoodController.text,
+                recipientName: recipientController.text,
+                directions: directionsController.text.trim().isEmpty
+                    ? null
+                    : directionsController.text,
+              )
+            : null,
+      );
       if (mounted) setState(() => createdOrder = order);
     } catch (error) {
       if (mounted) {
-        setState(
-          () => submissionError = 'No fue posible crear la solicitud: $error',
-        );
+        setState(() => submissionError = _friendlyRequestError(error));
       }
     } finally {
       if (mounted) setState(() => submitting = false);
@@ -1342,21 +1567,325 @@ class _RequestContentState extends State<_RequestContent> {
   }
 
   Future<void> _spin() async {
+    if (spinning) return;
     setState(() {
       spinning = true;
+      spinningBenefit = null;
       submissionError = null;
     });
     try {
       final benefit = await widget.onSpin();
-      if (mounted) setState(() => wheelBenefit = benefit);
+      if (!mounted) return;
+      setState(() => spinningBenefit = benefit);
+      await _wheelController.forward(from: 0);
+      if (mounted) {
+        setState(() {
+          wheelBenefit = benefit;
+          spinningBenefit = null;
+        });
+      }
     } catch (error) {
       if (mounted) {
-        setState(() => submissionError = 'No fue posible girar: $error');
+        _wheelController.stop();
+        setState(() {
+          spinningBenefit = null;
+          submissionError = _friendlyRequestError(error, wheel: true);
+        });
       }
     } finally {
       if (mounted) setState(() => spinning = false);
     }
   }
+
+  String _friendlyRequestError(Object error, {bool wheel = false}) {
+    final value = error.toString().toLowerCase();
+    if (value.contains('product_unavailable') || value.contains('p0001')) {
+      return 'Uno de los productos ya no está disponible. '
+          'Actualiza tu selección o pide asesoría.';
+    }
+    if (value.contains('delivery_')) {
+      return 'Revisa la modalidad y los datos de entrega antes de continuar.';
+    }
+    return wheel
+        ? 'No pudimos completar el giro en este momento. Puedes intentarlo nuevamente.'
+        : 'No pudimos enviar tu solicitud en este momento. Inténtalo nuevamente.';
+  }
+
+  bool get _deliveryIsComplete =>
+      requiresDelivery == false ||
+      (requiresDelivery == true &&
+          cityController.text.trim().isNotEmpty &&
+          addressController.text.trim().isNotEmpty &&
+          neighborhoodController.text.trim().isNotEmpty &&
+          recipientController.text.trim().isNotEmpty);
+
+  String get _deliveryLabel => requiresDelivery == true
+      ? 'Envío a domicilio · costo por confirmar'
+      : 'Acordar entrega con asesor';
+}
+
+class _FinalInfoCard extends StatelessWidget {
+  const _FinalInfoCard({
+    required this.icon,
+    required this.title,
+    required this.headline,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String headline;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(15),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppTheme.green, size: 30),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  headline,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 5),
+                Text(message),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _DeliveryField extends StatelessWidget {
+  const _DeliveryField({
+    required this.controller,
+    required this.label,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: TextField(
+      controller: controller,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+    ),
+  );
+}
+
+class _ReadyWheel extends StatelessWidget {
+  const _ReadyWheel({required this.onSpin, required this.waiting});
+
+  final VoidCallback? onSpin;
+  final bool waiting;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const Key('ready-wheel-panel'),
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF8EF),
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: const Color(0xFFE3C48E)),
+    ),
+    child: Column(
+      children: [
+        const Text(
+          '¡Gira la ruleta y descubre tu beneficio!',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppTheme.green,
+            fontWeight: FontWeight.w900,
+            fontSize: 18,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: CustomPaint(
+                key: Key('ready-wheel'),
+                size: Size.square(175),
+                painter: _WheelPainter(),
+              ),
+            ),
+            Icon(Icons.arrow_drop_down, size: 42, color: Color(0xFF8D662F)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        FilledButton.icon(
+          key: const Key('wheel-spin-button'),
+          onPressed: onSpin,
+          icon: const Icon(Icons.casino_outlined),
+          label: Text(waiting ? 'Verificando…' : 'Girar la ruleta'),
+        ),
+        if (!waiting) ...[
+          const SizedBox(height: 5),
+          const Text(
+            '1 giro disponible',
+            key: Key('wheel-spin-available'),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+class _SpinningWheel extends StatelessWidget {
+  const _SpinningWheel({required this.controller, required this.targetPercent});
+
+  final AnimationController controller;
+  final int targetPercent;
+
+  double get _targetAngle {
+    final index = switch (targetPercent) {
+      5 => 0,
+      10 => 1,
+      15 => 2,
+      _ => 0,
+    };
+    final alignment = (-math.pi / 3) - (index * 2 * math.pi / 3);
+    return (6 * 2 * math.pi) + alignment;
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const Key('spinning-wheel-panel'),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF3EC),
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: const Color(0xFFE3C48E)),
+    ),
+    child: Column(
+      children: [
+        const Text(
+          '¡Girando ruleta...!',
+          style: TextStyle(
+            color: AppTheme.green,
+            fontWeight: FontWeight.w900,
+            fontSize: 20,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Un momento, estamos descubriendo tu beneficio especial.',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: AnimatedBuilder(
+                animation: controller,
+                builder: (_, child) => Transform.rotate(
+                  angle:
+                      CurvedAnimation(
+                        parent: controller,
+                        curve: Curves.easeOutCubic,
+                      ).value *
+                      _targetAngle,
+                  child: child,
+                ),
+                child: const CustomPaint(
+                  key: Key('spinning-wheel'),
+                  size: Size.square(190),
+                  painter: _WheelPainter(),
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.arrow_drop_down,
+              size: 42,
+              color: Color(0xFF8D662F),
+            ),
+          ],
+        ),
+        const Text(
+          'Amor y Amistad 2026',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ],
+    ),
+  );
+}
+
+class _WheelPainter extends CustomPainter {
+  const _WheelPainter();
+
+  static const labels = ['5%', '10%', '15%'];
+  static const colors = [
+    Color(0xFF2E6B50),
+    Color(0xFFD3A955),
+    Color(0xFFD98289),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    const sweep = 2 * math.pi / 3;
+    for (var index = 0; index < labels.length; index++) {
+      final start = -math.pi / 2 + (index * sweep);
+      canvas.drawArc(rect, start, sweep, true, Paint()..color = colors[index]);
+      final labelAngle = start + sweep / 2;
+      final painter = TextPainter(
+        text: TextSpan(
+          text: labels[index],
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final labelCenter =
+          center +
+          Offset(math.cos(labelAngle), math.sin(labelAngle)) * (radius * .58);
+      painter.paint(canvas, labelCenter - Offset(painter.width / 2, 13));
+    }
+    canvas.drawCircle(center, 18, Paint()..color = const Color(0xFFFFF3EC));
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = const Color(0xFF8D662F)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _WheelPainter oldDelegate) => false;
 }
 
 class _SummaryRow extends StatelessWidget {

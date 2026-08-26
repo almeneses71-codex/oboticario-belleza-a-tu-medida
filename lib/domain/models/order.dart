@@ -26,6 +26,38 @@ enum ShippingStatus {
 
 enum OrderItemType { primary, complementary, kit, other }
 
+enum DeliveryMethod { homeDelivery, advisorArrangement }
+
+class DeliveryDetails {
+  const DeliveryDetails({
+    required this.city,
+    required this.address,
+    required this.neighborhood,
+    required this.recipientName,
+    this.directions,
+  });
+
+  final String city;
+  final String address;
+  final String neighborhood;
+  final String recipientName;
+  final String? directions;
+
+  bool get isValid =>
+      city.trim().isNotEmpty &&
+      address.trim().isNotEmpty &&
+      neighborhood.trim().isNotEmpty &&
+      recipientName.trim().isNotEmpty;
+
+  Map<String, dynamic> toJson() => {
+    'city': city.trim(),
+    'address': address.trim(),
+    'neighborhood': neighborhood.trim(),
+    'recipientName': recipientName.trim(),
+    'directions': directions?.trim(),
+  };
+}
+
 class OrderItemDraft {
   const OrderItemDraft({
     required this.productId,
@@ -118,6 +150,7 @@ class OrderDraft {
     required this.amounts,
     required this.shippingStatus,
     required this.requiresDelivery,
+    this.deliveryDetails,
     this.shippingEstimateMinCop = 10000,
     this.shippingEstimateMaxCop = 15000,
     this.status = OrderStatus.requested,
@@ -130,6 +163,7 @@ class OrderDraft {
   final OrderAmounts amounts;
   final ShippingStatus shippingStatus;
   final bool requiresDelivery;
+  final DeliveryDetails? deliveryDetails;
   final int shippingEstimateMinCop;
   final int shippingEstimateMaxCop;
   final OrderStatus status;
@@ -145,6 +179,9 @@ class OrderDraft {
           2 &&
       items.where((item) => item.itemType == OrderItemType.other).length <= 3 &&
       items.every((item) => item.isValidForCurrentPhase) &&
+      (requiresDelivery
+          ? deliveryDetails?.isValid == true
+          : deliveryDetails == null) &&
       shippingEstimateMinCop >= 0 &&
       shippingEstimateMaxCop >= shippingEstimateMinCop;
 
@@ -156,6 +193,10 @@ class OrderDraft {
     'amounts': amounts.toJson(),
     'shippingStatus': shippingStatus.name,
     'requiresDelivery': requiresDelivery,
+    'deliveryMethod': requiresDelivery
+        ? DeliveryMethod.homeDelivery.name
+        : DeliveryMethod.advisorArrangement.name,
+    'deliveryDetails': deliveryDetails?.toJson(),
     'shippingEstimateMinCop': shippingEstimateMinCop,
     'shippingEstimateMaxCop': shippingEstimateMaxCop,
     'status': status.name,

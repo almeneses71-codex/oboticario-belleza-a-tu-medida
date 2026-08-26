@@ -89,9 +89,37 @@ void main() {
         findsNWidgets(3),
       );
       expect(find.byKey(const Key('summary-totals-card')), findsOneWidget);
-      await _tapVisible(tester, 'Girar ruleta');
+      expect(find.byKey(const Key('wheel-campaign-banner')), findsOneWidget);
+      expect(find.byKey(const Key('ready-wheel')), findsOneWidget);
+      expect(find.byKey(const Key('wheel-spin-available')), findsOneWidget);
+      final spinButton = find.byKey(const Key('wheel-spin-button'));
+      expect(tester.getCenter(spinButton).dy, lessThan(568));
+      await _tapVisible(tester, 'Acordar entrega con asesor');
+      await tester.ensureVisible(find.text('Girar la ruleta'));
+      await tester.tap(find.text('Girar la ruleta'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(repository.spinCalls, 1);
+      expect(find.byKey(const Key('spinning-wheel-panel')), findsOneWidget);
+      expect(find.byKey(const Key('spinning-wheel')), findsOneWidget);
+      expect(find.byKey(const Key('wheel-benefit-banner')), findsNothing);
+      expect(find.byKey(const Key('wheel-spin-button')), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('submit-order-button')))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.pump(const Duration(milliseconds: 1900));
+      expect(repository.spinCalls, 1);
+      expect(find.byKey(const Key('wheel-benefit-banner')), findsNothing);
+      await tester.pump(const Duration(milliseconds: 150));
 
       expect(find.byKey(const Key('wheel-benefit-banner')), findsOneWidget);
+      expect(find.byKey(const Key('wheel-spin-available')), findsNothing);
+      expect(find.byKey(const Key('wheel-spin-button')), findsNothing);
       expect(
         find.text('¡Felicidades! Ganaste 10% de descuento'),
         findsOneWidget,
@@ -100,6 +128,14 @@ void main() {
       expect(find.byKey(const Key('summary-discount-row')), findsOneWidget);
       expect(find.byKey(const Key('summary-total-row')), findsOneWidget);
       await tester.ensureVisible(find.text('TOTAL A PAGAR'));
+      await tester.ensureVisible(find.text('Enviar mi solicitud'));
+      await tester.tap(find.text('Enviar mi solicitud'));
+      await tester.pumpAndSettle();
+      expect(find.text('¡Solicitud recibida!'), findsOneWidget);
+      expect(find.byKey(const Key('final-order-number')), findsOneWidget);
+      expect(find.text('Dario y Ana'), findsOneWidget);
+      expect(find.text('¿QUÉ SIGUE?'), findsOneWidget);
+      await tester.ensureVisible(find.text('Realizar otra compra'));
       expect(tester.takeException(), isNull);
     },
   );
@@ -114,6 +150,8 @@ Future<void> _tapVisible(WidgetTester tester, String label) async {
 
 class _FakeWheelOrderRepository
     implements OrderRepository, ProductAvailabilityRepository, WheelRepository {
+  int spinCalls = 0;
+
   @override
   bool get isConfigured => true;
 
@@ -132,6 +170,7 @@ class _FakeWheelOrderRepository
     required CustomerDraft customer,
     required List<OrderItemDraft> items,
   }) async {
+    spinCalls++;
     final productsCop = items.fold<int>(
       0,
       (total, item) => total + (item.originalUnitPriceCop * item.quantity),

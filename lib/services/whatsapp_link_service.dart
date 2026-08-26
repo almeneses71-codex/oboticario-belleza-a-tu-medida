@@ -19,23 +19,34 @@ class WhatsAppLinkService {
         '${product.code}. Precio de referencia del ciclo 08: $price. '
         'Busco ${answerLabels.join(', ')}. ¿Puedes confirmarme disponibilidad '
         'y precio vigente?';
-    return Uri.https(
-      'wa.me',
-      '/${AppConfig.whatsappNumber}',
-      {'text': message},
-    );
+    return Uri.https('wa.me', '/${AppConfig.whatsappNumber}', {
+      'text': message,
+    });
   }
 
   Uri? buildAdvisorUri() {
     if (!AppConfig.whatsappConfigured) return null;
-    return Uri.https(
-      'wa.me',
-      '/${AppConfig.whatsappNumber}',
-      {
-        'text': 'Hola, ${AppConfig.advisorName}. Vi oBoticario Belleza a tu '
-            'Medida y quiero recibir asesoría personal para elegir un producto.',
-      },
-    );
+    return Uri.https('wa.me', '/${AppConfig.whatsappNumber}', {
+      'text':
+          'Hola, ${AppConfig.advisorName}. Vi oBoticario Belleza a tu '
+          'Medida y quiero recibir asesoría personal para elegir un producto.',
+    });
+  }
+
+  Uri? buildOrderUri({
+    required String orderNumber,
+    required String customerName,
+    required Iterable<String> productNames,
+    required String deliveryMethod,
+  }) {
+    if (!AppConfig.whatsappConfigured) return null;
+    final products = productNames.join(', ');
+    return Uri.https('wa.me', '/${AppConfig.whatsappNumber}', {
+      'text':
+          'Hola, ${AppConfig.advisorName}. Acabo de registrar la solicitud '
+          '$orderNumber a nombre de $customerName. Productos: $products. '
+          'Entrega: $deliveryMethod. Quisiera continuar con la atención de mi pedido.',
+    });
   }
 
   Future<bool> launch(Uri? uri) async {

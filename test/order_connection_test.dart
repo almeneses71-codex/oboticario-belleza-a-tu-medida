@@ -39,6 +39,36 @@ void main() {
   );
 
   test(
+    'home delivery details reach OrderDraft without shipping charge',
+    () async {
+      final fake = _FakeOrderRepository();
+      final controller = await _controller(fake);
+      final selection = OrderSelection.fromPrimary(controller.products.first);
+      const details = DeliveryDetails(
+        city: 'Bogotá',
+        address: 'Calle 10 # 20-30',
+        neighborhood: 'Centro',
+        recipientName: 'Ana Cliente',
+        directions: 'Portería principal',
+      );
+
+      await controller.createOrder(
+        customer: _customer,
+        selection: selection,
+        requiresDelivery: true,
+        deliveryDetails: details,
+      );
+
+      expect(fake.draft!.requiresDelivery, isTrue);
+      expect(fake.draft!.deliveryDetails!.city, 'Bogotá');
+      expect(fake.draft!.deliveryDetails!.recipientName, 'Ana Cliente');
+      expect(fake.draft!.amounts.shippingCop, 0);
+      expect(fake.draft!.shippingStatus, ShippingStatus.pendingQuote);
+      expect(fake.draft!.toJson()['deliveryMethod'], 'homeDelivery');
+    },
+  );
+
+  test(
     'verified complementary is optional and reaches the order repository',
     () async {
       final fake = _FakeOrderRepository();
@@ -128,24 +158,45 @@ void main() {
   );
 
   test(
-    'restart creates a new journey while retries keep the current one',
+    'technical retry keeps journey and consecutive purchases rotate it',
     () async {
-      final fake = _FakeOrderRepository();
+      final fake = _FakeOrderRepository(failNextSubmission: true);
       final controller = await _controller(fake);
       final selection = OrderSelection.fromPrimary(controller.products.first);
       final firstJourney = controller.journeyId;
 
+      await expectLater(
+        controller.createOrder(customer: _customer, selection: selection),
+        throwsStateError,
+      );
+      expect(controller.journeyId, firstJourney);
       await controller.createOrder(customer: _customer, selection: selection);
-      await controller.createOrder(customer: _customer, selection: selection);
-      expect(fake.journeyIds, [firstJourney, firstJourney]);
-
-      controller.restart();
       final secondJourney = controller.journeyId;
       expect(secondJourney, isNot(firstJourney));
       await controller.createOrder(customer: _customer, selection: selection);
-      expect(fake.journeyIds.last, secondJourney);
+      expect(fake.journeyIds, [firstJourney, secondJourney]);
+
+      controller.restart();
+      final thirdJourney = controller.journeyId;
+      expect(thirdJourney, isNot(secondJourney));
+      await controller.createOrder(customer: _customer, selection: selection);
+      expect(fake.journeyIds.last, thirdJourney);
     },
   );
+
+  test('new purchase returns to welcome with a fresh journey', () async {
+    final controller = await _controller(_FakeOrderRepository());
+    final previousJourney = controller.journeyId;
+    controller.selectCategory('facial');
+
+    controller.startNewPurchase();
+
+    expect(controller.journeyId, isNot(previousJourney));
+    expect(controller.stage, AppStage.welcome);
+    expect(controller.selectedCategory, isNull);
+    expect(controller.result, isNull);
+    expect(controller.answers, isEmpty);
+  });
 
   test(
     'server-unavailable product cannot be recommended or reach OrderDraft',
@@ -190,9 +241,52 @@ void main() {
       expect(controller.products, isEmpty);
 
       fake.availabilityFailure = false;
-      await controller.retryAvailability();
+      final retry = controller.retryAvailability();
+      final duplicateTap = controller.retryAvailability();
+      expect(controller.loading, isTrue);
+      expect(controller.availabilityError, isNull);
+      await Future.wait([retry, duplicateTap]);
       expect(controller.availabilityVerified, isTrue);
       expect(controller.products, isNotEmpty);
+      expect(controller.loading, isFalse);
+      expect(fake.availabilityChecks, 2);
+
+      fake.availabilityFailure = true;
+      await controller.retryAvailability();
+      expect(controller.availabilityVerified, isFalse);
+      expect(controller.availabilityError, isNotNull);
+      expect(fake.availabilityChecks, 3);
+    },
+  );
+
+  test(
+    'suggested kits never become purchasable products or order items',
+    () async {
+      final fake = _FakeOrderRepository();
+      final controller = await _controller(fake);
+      expect(controller.products.any((item) => item.isSuggestedKit), isFalse);
+
+      final result = const RecommendationEngine().recommend(
+        category: 'regalos',
+        products: controller.products,
+        questions: controller.questions,
+        answers: const {
+          'reg_destinatario': 'no_seguro',
+          'reg_tipo': 'corporal',
+          'reg_ocasion': 'especial',
+          'reg_nivel': 'especial',
+        },
+      );
+      expect(result.hasMatch, isFalse);
+
+      final localProducts = await const LocalCatalogRepository().loadProducts();
+      final kit04 = localProducts.firstWhere((item) => item.id == 'KIT04');
+      final selection = OrderSelection.fromPrimary(kit04);
+      await expectLater(
+        controller.createOrder(customer: _customer, selection: selection),
+        throwsA(isA<OrderSubmissionUnavailable>()),
+      );
+      expect(fake.draft, isNull);
     },
   );
 }
@@ -227,10 +321,13 @@ class _FakeOrderRepository
   _FakeOrderRepository({
     this.excludedProductIds = const {},
     this.availabilityFailure = false,
+    this.failNextSubmission = false,
   });
 
   final Set<String> excludedProductIds;
   bool availabilityFailure;
+  int availabilityChecks = 0;
+  bool failNextSubmission;
   OrderDraft? draft;
   final List<String> journeyIds = [];
 
@@ -239,15 +336,24 @@ class _FakeOrderRepository
 
   @override
   Future<Set<String>> loadPurchasableProductIds() async {
+    availabilityChecks++;
     if (availabilityFailure) throw StateError('availability unavailable');
     return (await const LocalCatalogRepository().loadProducts())
-        .where((product) => !excludedProductIds.contains(product.id))
+        .where(
+          (product) =>
+              !product.isSuggestedKit &&
+              !excludedProductIds.contains(product.id),
+        )
         .map((product) => product.id)
         .toSet();
   }
 
   @override
   Future<CreatedOrder> createOrder(OrderDraft draft) async {
+    if (failNextSubmission) {
+      failNextSubmission = false;
+      throw StateError('temporary failure');
+    }
     this.draft = draft;
     journeyIds.add(draft.journeyId);
     return const CreatedOrder(

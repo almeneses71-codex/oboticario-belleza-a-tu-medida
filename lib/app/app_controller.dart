@@ -61,6 +61,7 @@ class AppController extends ChangeNotifier {
   bool wheelCampaignActive = false;
   bool availabilityVerified = false;
   String? availabilityError;
+  bool _availabilityRetryInProgress = false;
 
   Future<void> initialize() async {
     try {
@@ -171,6 +172,17 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void startNewPurchase() {
+    journeyId = _newJourneyId();
+    selectedCategory = null;
+    questionIndex = 0;
+    answers.clear();
+    result = null;
+    error = null;
+    stage = AppStage.welcome;
+    notifyListeners();
+  }
+
   List<String> get selectedAnswerLabels {
     final labels = <String>[];
     for (final question in categoryQuestions) {
@@ -189,11 +201,23 @@ class AppController extends ChangeNotifier {
   bool get orderSubmissionConfigured => _orderRepository?.isConfigured == true;
 
   Future<void> retryAvailability() async {
+    if (_availabilityRetryInProgress) return;
+    _availabilityRetryInProgress = true;
     loading = true;
+    availabilityVerified = false;
+    availabilityError = null;
+    products = const [];
     notifyListeners();
-    await _syncAvailability();
-    loading = false;
-    notifyListeners();
+    try {
+      // Give Flutter one event-loop turn to render the loading state before a
+      // fast network response rebuilds the availability screen.
+      await Future<void>.delayed(Duration.zero);
+      await _syncAvailability();
+    } finally {
+      loading = false;
+      _availabilityRetryInProgress = false;
+      notifyListeners();
+    }
   }
 
   Future<WheelBenefit> spinWheel({
@@ -249,6 +273,8 @@ class AppController extends ChangeNotifier {
   Future<CreatedOrder> createOrder({
     required CustomerDraft customer,
     required OrderSelection selection,
+    bool requiresDelivery = false,
+    DeliveryDetails? deliveryDetails,
   }) async {
     final repository = _orderRepository;
     if (repository == null || !repository.isConfigured) {
@@ -259,7 +285,7 @@ class AppController extends ChangeNotifier {
         'Uno de los productos ya no está disponible. Actualiza tu selección.',
       );
     }
-    return repository.createOrder(
+    final createdOrder = await repository.createOrder(
       OrderDraft(
         journeyId: journeyId,
         customer: customer,
@@ -267,9 +293,12 @@ class AppController extends ChangeNotifier {
         items: selection.items,
         amounts: selection.amounts,
         shippingStatus: ShippingStatus.pendingQuote,
-        requiresDelivery: true,
+        requiresDelivery: requiresDelivery,
+        deliveryDetails: deliveryDetails,
       ),
     );
+    journeyId = _newJourneyId();
+    return createdOrder;
   }
 
   bool _selectionIsPurchasable(OrderSelection selection) => selection.items

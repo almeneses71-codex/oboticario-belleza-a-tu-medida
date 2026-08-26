@@ -1,7 +1,7 @@
 name: oboticario_belleza_a_tu_medida
 description: Asesor independiente de productos O Boticario en cinco preguntas.
 publish_to: "none"
-version: 0.3.3+6
+version: 0.3.4+7
 
 environment:
   sdk: ">=3.8.0 <4.0.0"

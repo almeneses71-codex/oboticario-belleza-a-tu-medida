@@ -43,67 +43,49 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('SKU: 60138'), findsOneWidget);
-    expect(find.text('573001234567'), findsOneWidget);
     expect(find.byKey(const ValueKey('summary-image-OB001')), findsOneWidget);
     expect(find.byKey(const Key('summary-totals-card')), findsOneWidget);
     expect(find.text('TOTAL A PAGAR'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('submit-order-button')))
+          .onPressed,
+      isNull,
+    );
+    await tester.ensureVisible(find.text('Envío a domicilio'));
+    await tester.tap(find.text('Envío a domicilio'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Ciudad/municipio'),
+      'Bogotá',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Dirección'),
+      'Calle 10 # 20-30',
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Barrio'), 'Centro');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Nombre de quien recibe'),
+      'Ana Cliente',
+    );
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Enviar mi solicitud'));
     await tester.tap(find.text('Enviar mi solicitud'));
     await tester.pumpAndSettle();
     expect(find.text('OBM-TEST-0001'), findsOneWidget);
+    expect(find.text('¡Solicitud recibida!'), findsOneWidget);
+    expect(find.text('Dario y Ana'), findsOneWidget);
+    expect(find.text('¿QUÉ SIGUE?'), findsOneWidget);
+    expect(find.text('Continuar por WhatsApp'), findsOneWidget);
+    expect(find.text('Realizar otra compra'), findsOneWidget);
     expect(orders.draft!.items.single.productId, 'OB001');
-
-    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    expect(orders.draft!.requiresDelivery, isTrue);
+    expect(orders.draft!.deliveryDetails!.city, 'Bogotá');
+    await tester.ensureVisible(find.text('Realizar otra compra'));
+    await tester.tap(find.text('Realizar otra compra'));
     await tester.pumpAndSettle();
-    final alternativeAction = find.widgetWithText(
-      FilledButton,
-      'Me interesa este producto',
-    );
-    expect(alternativeAction, findsOneWidget);
-    await tester.ensureVisible(alternativeAction);
-    await tester.tap(alternativeAction);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Continuar con mi elección'));
-    await tester.tap(find.text('Continuar con mi elección'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Nombre'),
-      'Ana Cliente',
-    );
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Número de WhatsApp'),
-      '573001234567',
-    );
-    await tester.tap(find.byType(Checkbox));
-    await tester.tap(find.text('Revisar mi solicitud'));
-    await tester.pumpAndSettle();
-    final secondSummary = find.byType(BottomSheet);
-    expect(
-      find.descendant(of: secondSummary, matching: find.text('Egeo Dolce EDT')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: secondSummary, matching: find.textContaining('SKU:')),
-      findsNWidgets(2),
-    );
-    expect(find.byKey(const ValueKey('summary-image-OB001')), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget.key is ValueKey<String> &&
-            (widget.key! as ValueKey<String>).value.startsWith(
-              'summary-image-',
-            ),
-      ),
-      findsNWidgets(2),
-    );
-    await tester.ensureVisible(find.text('Enviar mi solicitud'));
-    await tester.tap(find.text('Enviar mi solicitud'));
-    await tester.pumpAndSettle();
-    expect(orders.draft!.items, hasLength(2));
-    expect(orders.draft!.items.first.productId, 'OB001');
-    expect(orders.draft!.items.first.itemType, OrderItemType.primary);
-    expect(orders.draft!.items.last.itemType, OrderItemType.other);
+    expect(find.text('Comenzar mi diagnóstico'), findsOneWidget);
+    expect(find.text('¡Solicitud recibida!'), findsNothing);
   });
 }
 
@@ -146,6 +128,7 @@ Future<void> _openPerfumeResult(
 class _FakeOrderRepository
     implements OrderRepository, ProductAvailabilityRepository {
   OrderDraft? draft;
+  final List<String> journeyIds = [];
 
   @override
   bool get isConfigured => true;
@@ -159,6 +142,7 @@ class _FakeOrderRepository
   @override
   Future<CreatedOrder> createOrder(OrderDraft draft) async {
     this.draft = draft;
+    journeyIds.add(draft.journeyId);
     return const CreatedOrder(
       id: '00000000-0000-0000-0000-000000000001',
       number: 'OBM-TEST-0001',

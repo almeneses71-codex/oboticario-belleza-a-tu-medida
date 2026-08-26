@@ -5,12 +5,11 @@
 - [ ] Confirmar el código pendiente de OB046 antes de habilitarlo.
 - [ ] Reemplazar iconos provisionales por identidad aprobada.
 - [ ] Incorporar imágenes autorizadas y optimizadas de productos.
-- [ ] Ejecutar `flutter analyze` sin errores.
-- [ ] Ejecutar `flutter test` sin fallos.
-- [ ] Ejecutar `flutter test integration_test` sin fallos.
-- [ ] Ejecutar `flutter build web --release`.
+- [x] Ejecutar `flutter analyze` sin errores (2026-08-26).
+- [x] Ejecutar `flutter test` sin fallos: 29 pruebas (2026-08-26).
+- [ ] Ejecutar la prueba integral web con ChromeDriver sin fallos.
+- [x] Ejecutar `flutter build web --release` (2026-08-26).
 - [ ] Probar a 320 px, Android, Safari/iPhone y escritorio.
 - [ ] Probar instalación PWA y funcionamiento del shell sin conexión.
 - [ ] Revisar el aviso de independencia y privacidad.
 - [ ] Publicar únicamente mediante HTTPS.
-

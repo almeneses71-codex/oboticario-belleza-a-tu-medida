@@ -1,6 +1,6 @@
 # oBoticario Belleza a tu Medida
 
-MVP Flutter Web/PWA de un asesor independiente de productos O Boticário. Formula cinco preguntas por categoría, aplica reglas determinísticas y entrega una recomendación principal, una alternativa y contacto por WhatsApp.
+Aplicación Flutter Web/PWA para asesoría independiente de productos O Boticário. Formula cinco preguntas por categoría, aplica reglas determinísticas, presenta una recomendación y permite registrar una solicitud comercial en Supabase antes de continuar por WhatsApp.
 
 La aplicación no se instala dentro de WhatsApp. Se publica como enlace web y se comparte por chats, estados o código QR; el resultado abre una conversación de WhatsApp con el mensaje listo.
 
@@ -16,7 +16,9 @@ La aplicación no se instala dentro de WhatsApp. Se publica como enlace web y se
 - No-match sin recomendaciones forzadas.
 - WhatsApp configurable y mensaje codificado mediante `Uri`.
 - Contadores locales anónimos de aperturas, cuestionarios y clics.
-- PWA instalable, responsive y sin backend.
+- Solicitudes, disponibilidad, atribución, operación comercial y auditoría mediante Supabase cuando se configura.
+- Funcionamiento local limitado al recomendador cuando Supabase no está configurado; el envío de solicitudes queda desactivado de forma explícita.
+- PWA instalable y responsive.
 - Service worker propio para conservar el shell y recursos ya visitados.
 
 ## Preparación en Windows
@@ -60,7 +62,7 @@ La aplicación usa internamente un lienzo "Teléfono 2" de 390 x 844 centrado en
 Chrome. El script ya utiliza el WhatsApp comercial configurado y evita enviar a
 Chrome parámetros de tamaño que puedan convertirse en pestañas `0.0.x.x`.
 
-La versión 0.3.3 incluye las fotografías `OB001.webp` a `OB064.webp` y las
+La versión 0.3.4 incluye las fotografías `OB001.webp` a `OB064.webp` y las
 composiciones `KIT01.webp` a `KIT04.webp`. La ruta se resuelve automáticamente
 por el ID estable de cada producto o kit.
 
@@ -69,14 +71,17 @@ Sin `WHATSAPP_NUMBER`, la app funciona completa, pero mantiene desactivados los 
 ## Verificación obligatoria
 
 ```powershell
-dart format lib test integration_test
+dart format lib test integration_test test_driver
 flutter analyze
 flutter test
-flutter test integration_test
+chromedriver --port=4444
+flutter drive -d chrome --driver=test_driver/integration_test.dart --target=integration_test/full_flow_test.dart
 flutter build web --release --dart-define=WHATSAPP_NUMBER=57XXXXXXXXXX --dart-define=ADVISOR_NAME="Dario y Ana"
 ```
 
-El sitio compilado queda en `build\web`.
+La prueba integral web requiere un ChromeDriver compatible con la versión de Chrome instalada. El sitio compilado queda en `build\web`.
+
+Para habilitar disponibilidad y registro de solicitudes agrega también las variables de compilación `SUPABASE_URL` y `SUPABASE_ANON_KEY`. No guardes la clave en el repositorio.
 
 ## Crear una APK de prueba para Android
 

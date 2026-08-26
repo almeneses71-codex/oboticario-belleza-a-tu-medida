@@ -23,27 +23,27 @@ class Product {
   });
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
-        id: json['id'] as String,
-        category: json['category'] as String,
-        type: json['type'] as String,
-        subtype: json['subtype'] as String,
-        recipient: json['recipient'] as String,
-        name: json['name'] as String,
-        presentation: json['presentation'] as String,
-        priceCop: (json['priceCop'] as num).toInt(),
-        familyOrActive: json['familyOrActive'] as String,
-        intensity: (json['intensity'] as num).toInt(),
-        need: json['need'] as String,
-        profile: json['profile'] as String,
-        moment: json['moment'] as String,
-        available: json['available'] as bool,
-        eligible: json['eligible'] as bool,
-        code: json['code'] as String,
-        updated: json['updated'] as String,
-        role: json['role'] as String,
-        isSuggestedKit: json['isSuggestedKit'] as bool? ?? false,
-        imagePath: json['imagePath'] as String? ?? '',
-      );
+    id: json['id'] as String,
+    category: json['category'] as String,
+    type: json['type'] as String,
+    subtype: json['subtype'] as String,
+    recipient: json['recipient'] as String,
+    name: json['name'] as String,
+    presentation: json['presentation'] as String,
+    priceCop: (json['priceCop'] as num).toInt(),
+    familyOrActive: json['familyOrActive'] as String,
+    intensity: (json['intensity'] as num).toInt(),
+    need: json['need'] as String,
+    profile: json['profile'] as String,
+    moment: json['moment'] as String,
+    available: json['available'] as bool,
+    eligible: json['eligible'] as bool,
+    code: json['code'] as String,
+    updated: json['updated'] as String,
+    role: json['role'] as String,
+    isSuggestedKit: json['isSuggestedKit'] as bool? ?? false,
+    imagePath: json['imagePath'] as String? ?? '',
+  );
 
   final String id;
   final String category;
@@ -72,13 +72,13 @@ class Product {
       imagePath.isNotEmpty ? imagePath : 'assets/images/products/$id.webp';
 
   String get searchableText => [
-        type,
-        subtype,
-        recipient,
-        name,
-        familyOrActive,
-        need,
-        profile,
-        moment,
-      ].join(' ').toLowerCase();
+    type,
+    subtype,
+    recipient,
+    name,
+    familyOrActive,
+    need,
+    profile,
+    moment,
+  ].join(' ').toLowerCase();
 }

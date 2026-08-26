@@ -72,6 +72,16 @@ class RecommendationEngine {
         .toList();
 
     if (ranked.isEmpty) return _noMatch;
+    if (category == 'regalos') {
+      final recipient = _giftRecipient(answers['reg_destinatario']);
+      ranked.removeWhere(
+        (candidate) => !_matchesGiftRecipient(
+          candidate.ranked.product.recipient,
+          recipient,
+        ),
+      );
+      if (ranked.isEmpty) return _noMatch;
+    }
     ranked.sort((a, b) {
       var order = b.ranked.score.compareTo(a.ranked.score);
       if (order != 0) return order;
@@ -164,6 +174,19 @@ class RecommendationEngine {
 
   int _roleRank(Product product) =>
       product.role.toLowerCase() == 'principal' ? 0 : 1;
+
+  String _giftRecipient(String? answer) => switch (answer) {
+    'hombre' => 'hombre',
+    'mujer' => 'mujer',
+    _ => 'unisex',
+  };
+
+  bool _matchesGiftRecipient(String productRecipient, String target) {
+    final normalized = productRecipient.trim().toLowerCase();
+    return target == 'unisex'
+        ? normalized == 'unisex'
+        : normalized == target || normalized == 'unisex';
+  }
 }
 
 class _Selection {

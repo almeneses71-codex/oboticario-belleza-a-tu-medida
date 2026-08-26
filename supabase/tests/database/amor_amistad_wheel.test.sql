@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(21);
+select plan(22);
 
 select has_table('public', 'campaign_wheel_spins', 'wheel awards are persisted');
 select has_column('public', 'orders', 'promotion_spin_id', 'order links its protected award');
@@ -14,9 +14,9 @@ select is(public.round_cop_to_100(70149), 70100, '70149 rounds down');
 select is(public.round_cop_to_100(70150), 70200, 'half hundred rounds up');
 select is(public.round_cop_to_100(70168), 70200, '70168 rounds up');
 select isnt(
-  public.amor_amistad_2026_is_active('2026-08-31 23:59:59 America/Bogota'),
+  public.amor_amistad_2026_is_active('2026-08-21 23:59:59 America/Bogota'),
   true,
-  'wheel is unavailable before September 1 in Colombia'
+  'wheel is unavailable before August 22 in Colombia'
 );
 select isnt(
   public.amor_amistad_2026_is_active('2026-09-20 00:00:00 America/Bogota'),
@@ -97,9 +97,38 @@ select public.create_order_request_with_delivery(
     'items', jsonb_build_array(jsonb_build_object(
       'productId', 'OB001', 'productCode', '60138', 'itemType', 'primary', 'quantity', 1
     )),
-    'requiresDelivery', true
+    'requiresDelivery', true,
+    'deliveryMethod', 'homeDelivery',
+    'deliveryDetails', jsonb_build_object(
+      'city', 'Bogotá', 'address', 'Calle 10 # 20-30',
+      'neighborhood', 'Centro', 'recipientName', 'Cliente Ruleta'
+    )
   )
 ) result;
+
+select throws_ok(
+  $$select public.create_order_request_with_delivery(
+    jsonb_build_object(
+      'journeyId', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'customer', jsonb_build_object(
+        'name', 'Cliente Ruleta', 'whatsapp', '573009991111',
+        'acceptsDataProcessing', true, 'acceptsPromotions', false
+      ),
+      'attribution', jsonb_build_object(
+        'sellerId', 'DAR', 'channelId', 'directo', 'source', 'directo'
+      ),
+      'items', jsonb_build_array(jsonb_build_object(
+        'productId', 'OB001', 'productCode', '60138',
+        'itemType', 'primary', 'quantity', 1
+      )),
+      'requiresDelivery', false,
+      'deliveryMethod', 'advisorArrangement'
+    )
+  )$$,
+  '23505',
+  null,
+  'PostgreSQL rejects a second order with the same journey_id'
+);
 
 select is(
   (select discount_cop from public.orders where id =
