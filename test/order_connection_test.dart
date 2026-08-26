@@ -14,6 +14,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('local mode keeps recommendations available without Supabase', () async {
+    SharedPreferences.setMockInitialValues({});
+    final controller = AppController(
+      repository: const LocalCatalogRepository(),
+      crossSellRepository: const LocalCrossSellRepository(),
+      orderRepository: null,
+      analytics: LocalAnalyticsService(),
+    );
+
+    await controller.initialize();
+
+    expect(controller.availabilityVerified, isTrue);
+    expect(controller.availabilityError, isNull);
+    expect(controller.products, isNotEmpty);
+    expect(
+      controller.products.every(
+        (product) =>
+            product.available && product.eligible && !product.isSuggestedKit,
+      ),
+      isTrue,
+    );
+    expect(controller.orderSubmissionConfigured, isFalse);
+  });
+
   test(
     'selected alternative and attribution reach the order repository',
     () async {

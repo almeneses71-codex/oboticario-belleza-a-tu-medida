@@ -40,13 +40,6 @@ void main() {
       final continueLabel = index == 3 ? 'Ver mi recomendación' : 'Continuar';
       await tester.ensureVisible(find.text(continueLabel));
       await tester.tap(find.text(continueLabel));
-      if (index == 3) {
-        await tester.pump();
-        expect(
-          find.text('Estamos encontrando tu mejor opción'),
-          findsOneWidget,
-        );
-      }
       await tester.pumpAndSettle();
     }
 

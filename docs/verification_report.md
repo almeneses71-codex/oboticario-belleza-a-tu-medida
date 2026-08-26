@@ -23,13 +23,15 @@ Versión del código: 0.3.2+5
 
 - Flutter 3.44.6 y Dart 3.12.2 verificados con `flutter doctor -v` sin problemas.
 - `flutter analyze --no-pub`: sin problemas.
-- `flutter test --no-pub`: 29 pruebas aprobadas.
+- `flutter test --no-pub`: 30 pruebas aprobadas.
 - `flutter build web --release`: aprobado; salida renovada en `build/web`.
 - `flutter build apk --debug`: aprobado; salida renovada en `build/app/outputs/flutter-apk/app-debug.apk`.
-- La prueba integral web fue preparada con `test_driver/integration_test.dart`, pero el servicio de depuración web perdió la conexión antes de ejecutar las aserciones. El recorrido equivalente permanece cubierto por las pruebas de widget aprobadas.
+- La prueba integral fue ejecutada en el emulador Android 36 `medium_phone`: recorrido completo aprobado.
+- La revisión visual en 1080 x 2400 confirmó bienvenida legible, controles completos y ausencia de desbordamientos.
+- La prueba en el emulador detectó y permitió corregir el bloqueo del recomendador cuando Supabase no está configurado. El modo local ahora recomienda con el catálogo incluido y mantiene desactivado solamente el registro remoto de solicitudes.
 - Las pruebas pgTAP no se ejecutaron en este equipo porque Docker Desktop no está instalado o activo. La CLI Supabase 2.114.0 detectó correctamente esa ausencia.
 
-Estos dos últimos puntos deben verificarse en un equipo con ChromeDriver estable y Supabase local antes de publicar; no impiden conservar este cierre como candidato de piloto técnico.
+Las pruebas pgTAP deben verificarse con Supabase local antes de publicar; no impiden conservar este cierre como candidato de piloto técnico.
 
 ## Registro histórico de validación pendiente
 

@@ -306,7 +306,21 @@ class AppController extends ChangeNotifier {
 
   Future<bool> _syncAvailability() async {
     final repository = _orderRepository;
-    if (repository == null || repository is! ProductAvailabilityRepository) {
+    if (repository == null) {
+      products = _localProducts
+          .where(
+            (product) =>
+                product.available &&
+                product.eligible &&
+                !product.isSuggestedKit,
+          )
+          .toList(growable: false);
+      availabilityVerified = true;
+      availabilityError = null;
+      notifyListeners();
+      return true;
+    }
+    if (repository is! ProductAvailabilityRepository) {
       products = const [];
       availabilityVerified = false;
       availabilityError =
