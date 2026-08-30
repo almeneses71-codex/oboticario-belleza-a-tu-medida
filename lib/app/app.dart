@@ -14,17 +14,20 @@ import '../domain/models/order_selection.dart';
 import '../domain/repositories/catalog_repository.dart';
 import '../domain/repositories/cross_sell_repository.dart';
 import '../domain/repositories/order_repository.dart';
+import '../domain/repositories/staff_repository.dart';
 import '../services/analytics_service.dart';
 import '../services/whatsapp_link_service.dart';
 import 'app_config.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
+import 'staff_app.dart';
 
 class BeautyAdvisorApp extends StatefulWidget {
   const BeautyAdvisorApp({
     required this.repository,
     required this.crossSellRepository,
     required this.orderRepository,
+    this.staffRepository,
     required this.analytics,
     super.key,
   });
@@ -32,6 +35,7 @@ class BeautyAdvisorApp extends StatefulWidget {
   final CatalogRepository repository;
   final CrossSellRepository crossSellRepository;
   final OrderRepository? orderRepository;
+  final StaffRepository? staffRepository;
   final AnalyticsService analytics;
 
   @override
@@ -65,15 +69,19 @@ class _BeautyAdvisorAppState extends State<BeautyAdvisorApp> {
     theme: AppTheme.light,
     home: AnimatedBuilder(
       animation: controller,
-      builder: (context, _) => _AppShell(controller: controller),
+      builder: (context, _) => _AppShell(
+        controller: controller,
+        staffRepository: widget.staffRepository,
+      ),
     ),
   );
 }
 
 class _AppShell extends StatelessWidget {
-  const _AppShell({required this.controller});
+  const _AppShell({required this.controller, required this.staffRepository});
 
   final AppController controller;
+  final StaffRepository? staffRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -157,7 +165,10 @@ class _AppShell extends StatelessWidget {
                 ],
               ),
         body: switch (controller.stage) {
-          AppStage.welcome => _WelcomeScreen(controller: controller),
+          AppStage.welcome => _WelcomeScreen(
+            controller: controller,
+            staffRepository: staffRepository,
+          ),
           AppStage.categories => _CategoryScreen(controller: controller),
           AppStage.questionnaire => _QuestionScreen(controller: controller),
           AppStage.processing => const _ProcessingScreen(),
@@ -207,9 +218,13 @@ class _AppShell extends StatelessWidget {
 }
 
 class _WelcomeScreen extends StatelessWidget {
-  const _WelcomeScreen({required this.controller});
+  const _WelcomeScreen({
+    required this.controller,
+    required this.staffRepository,
+  });
 
   final AppController controller;
+  final StaffRepository? staffRepository;
 
   @override
   Widget build(BuildContext context) => _VisualBackground(
@@ -280,6 +295,20 @@ class _WelcomeScreen extends StatelessWidget {
               context,
             ).textTheme.bodySmall?.copyWith(color: const Color(0xFF465B54)),
           ),
+          if (staffRepository != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                key: const Key('temporary-staff-access'),
+                tooltip: 'Acceso administrativo de prueba',
+                icon: const Icon(Icons.admin_panel_settings_outlined, size: 20),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => StaffApp(repository: staffRepository),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     ),
@@ -429,7 +458,7 @@ class _QuestionScreen extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 24),
-            for (final option in question.options) ...[
+            for (final option in controller.currentQuestionOptions) ...[
               _AnswerCard(
                 option: option,
                 selected: selected == option.id,
@@ -690,37 +719,49 @@ class _ResultScreenState extends State<_ResultScreen> {
       orderSelection?.items.any((item) => item.productId == product.id) == true;
 
   void _toggleProduct(Product product) {
-    final selection = orderSelection;
-    if (selection == null) {
-      final recommendedPrimary = controller.result!.primary!.product;
-      final nextSelection = OrderSelection.fromPrimary(recommendedPrimary);
-      if (product.id != recommendedPrimary.id) {
-        nextSelection.addAlternative(product);
-      }
-      final nextCrossSell = controller.crossSellFor(recommendedPrimary);
-      setState(() {
-        orderSelection = nextSelection;
-        crossSell = nextCrossSell;
-      });
-      for (final candidate in nextCrossSell.candidates) {
-        controller.recordCrossSellShown(candidate);
-      }
-      return;
+    final result = controller.result!;
+    final recommendedPrimary = result.primary!.product;
+    final recommendedAlternative = result.alternative?.product;
+
+    var primarySelected = _isSelected(recommendedPrimary);
+    var alternativeSelected =
+        recommendedAlternative != null && _isSelected(recommendedAlternative);
+
+    if (product.id == recommendedPrimary.id) {
+      primarySelected = !primarySelected;
+    } else if (recommendedAlternative != null &&
+        product.id == recommendedAlternative.id) {
+      alternativeSelected = !alternativeSelected;
     }
-    if (selection.primary.productId == product.id) {
+
+    if (!primarySelected && !alternativeSelected) {
       setState(() {
         orderSelection = null;
         crossSell = const CrossSellResult([]);
       });
       return;
     }
+
+    final baseProduct = primarySelected
+        ? recommendedPrimary
+        : recommendedAlternative!;
+
+    final nextSelection = OrderSelection.fromPrimary(baseProduct);
+
+    if (primarySelected && alternativeSelected) {
+      nextSelection.addAlternative(recommendedAlternative!);
+    }
+
+    final nextCrossSell = controller.crossSellFor(baseProduct);
+
     setState(() {
-      if (selection.containsAlternative(product.id)) {
-        selection.removeAlternative(product.id);
-      } else {
-        selection.addAlternative(product);
-      }
+      orderSelection = nextSelection;
+      crossSell = nextCrossSell;
     });
+
+    for (final candidate in nextCrossSell.candidates) {
+      controller.recordCrossSellShown(candidate);
+    }
   }
 
   void _toggleComplementary(CrossSellCandidate candidate) {
@@ -1239,6 +1280,12 @@ class _RequestContentState extends State<_RequestContent>
                   fontWeight: FontWeight.w900,
                 ),
               ),
+              const SizedBox(height: 6),
+              const Text(
+                'Guarda este número para consultar tu solicitud.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
             ],
           ),
         ),
@@ -1255,10 +1302,28 @@ class _RequestContentState extends State<_RequestContent>
           icon: Icons.chat_outlined,
           title: '¿QUÉ SIGUE?',
           headline: 'Te contactaremos por WhatsApp',
+
           message:
-              'Confirmaremos los detalles de tu pedido. Si no podemos responder de inmediato, tu solicitud ya quedó registrada y la atenderemos en el menor tiempo posible.',
+            'Tu solicitud ya quedó registrada. Revisaremos los detalles de tu pedido y te contactaremos por WhatsApp en el menor tiempo posible.',
         ),
         const SizedBox(height: 12),
+
+        const Text(
+          'PRODUCTOS SOLICITADOS',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: AppTheme.green,
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final item in widget.selection.items) ...[
+          _SummaryRow(
+            label: 'Producto',
+            value: '${item.productName} × ${item.quantity}',
+          ),
+        ],
+        const SizedBox(height: 12),
+
         Card(
           color: const Color(0xFFFFFBF4),
           child: Padding(
@@ -1273,9 +1338,10 @@ class _RequestContentState extends State<_RequestContent>
                         widget.selection.amounts.subtotalCop,
                   ),
                 ),
+
                 if (wheelBenefit != null)
                   _SummaryRow(
-                    label: 'Descuento',
+                    label: 'Descuento ${wheelBenefit!.discountPercent}%',
                     value:
                         '-${_ProductCard.priceLabel(wheelBenefit!.discountCop)}',
                     valueColor: AppTheme.green,
@@ -1440,24 +1506,26 @@ class _RequestContentState extends State<_RequestContent>
           '¿Cómo quieres recibir tu pedido?',
           style: Theme.of(context).textTheme.titleMedium,
         ),
-        RadioGroup<bool>(
-          groupValue: requiresDelivery,
-          onChanged: spinning || submitting
-              ? (_) {}
-              : (value) => setState(() => requiresDelivery = value),
-          child: const Column(
-            children: [
-              RadioListTile<bool>(
-                value: true,
-                title: Text('Envío a domicilio'),
-                subtitle: Text('El costo del envío está por confirmar.'),
-              ),
-              RadioListTile<bool>(
-                value: false,
-                title: Text('Acordar entrega con asesor'),
-              ),
-            ],
-          ),
+        Column(
+          children: [
+            RadioListTile<bool>(
+              value: true,
+              groupValue: requiresDelivery,
+              onChanged: spinning || submitting
+                  ? null
+                  : (value) => setState(() => requiresDelivery = value),
+              title: const Text('Envío a domicilio'),
+              subtitle: const Text('El costo del envío está por confirmar.'),
+            ),
+            RadioListTile<bool>(
+              value: false,
+              groupValue: requiresDelivery,
+              onChanged: spinning || submitting
+                  ? null
+                  : (value) => setState(() => requiresDelivery = value),
+              title: const Text('Acordar entrega con asesor'),
+            ),
+          ],
         ),
         if (requiresDelivery == true) ...[
           _DeliveryField(
@@ -1558,6 +1626,7 @@ class _RequestContentState extends State<_RequestContent>
       );
       if (mounted) setState(() => createdOrder = order);
     } catch (error) {
+
       if (mounted) {
         setState(() => submissionError = _friendlyRequestError(error));
       }

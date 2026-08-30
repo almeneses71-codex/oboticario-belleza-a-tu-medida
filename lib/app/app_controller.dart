@@ -98,6 +98,89 @@ class AppController extends ChangeNotifier {
     return items.isEmpty ? null : items[questionIndex];
   }
 
+  List<AnswerOption> get currentQuestionOptions {
+    final question = currentQuestion;
+    if (question == null) return const [];
+
+    final recipient = _selectedRecipient();
+    if (recipient == null) return question.options;
+
+    final compatibleProducts = products
+        .where((product) {
+          if (product.category != selectedCategory ||
+              !product.available ||
+              !product.eligible) {
+            return false;
+          }
+
+          final productRecipient = product.recipient.trim().toLowerCase();
+          return recipient == 'unisex'
+              ? productRecipient == 'unisex'
+              : productRecipient == recipient || productRecipient == 'unisex';
+        })
+        .toList(growable: false);
+
+    return question.options
+        .where((option) {
+          if (option.ignored) return true;
+
+          final types = (option.hardFilters['types'] as List<dynamic>?)
+              ?.cast<String>();
+          if (types != null && types.isNotEmpty) {
+            final accepted = types.map((item) => item.toLowerCase()).toSet();
+            if (!compatibleProducts.any(
+              (product) => accepted.contains(product.type.toLowerCase()),
+            )) {
+              return false;
+            }
+          }
+
+          if (option.targetIntensity != null) {
+            if (!compatibleProducts.any(
+              (product) => product.intensity == option.targetIntensity,
+            )) {
+              return false;
+            }
+          }
+
+          if (option.boosts.isNotEmpty) {
+            final hasMatch = compatibleProducts.any(
+              (product) => option.boosts.any(
+                (boost) => boost.queries.any(
+                  (query) =>
+                      product.searchableText.contains(query.toLowerCase()),
+                ),
+              ),
+            );
+            if (!hasMatch) return false;
+          }
+
+          return true;
+        })
+        .toList(growable: false);
+  }
+
+  String? _selectedRecipient() {
+    for (final question in categoryQuestions) {
+      final answerId = answers[question.id];
+      if (answerId == null) continue;
+
+      final option = question.options.firstWhere((item) => item.id == answerId);
+
+      final recipients = (option.hardFilters['recipients'] as List<dynamic>?)
+          ?.cast<String>();
+
+      if (recipients != null && recipients.isNotEmpty) {
+        return recipients.first.trim().toLowerCase();
+      }
+
+      if (question.id.contains('destinatario') && option.id == 'no_seguro') {
+        return 'unisex';
+      }
+    }
+    return null;
+  }
+
   void begin() {
     stage = AppStage.categories;
     notifyListeners();
@@ -237,7 +320,9 @@ class AppController extends ChangeNotifier {
         'La campaña Amor y Amistad no está disponible.',
       );
     }
+
     return (repository as WheelRepository).spinWheel(
+      journeyId: journeyId,
       customer: customer,
       items: selection.items,
     );

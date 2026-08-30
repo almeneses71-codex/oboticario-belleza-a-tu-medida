@@ -86,7 +86,7 @@ class SupabaseStaffRepository implements StaffRepository {
           'order_customer_delivery_preferences(requires_delivery),'
           'origin_seller:sellers!orders_seller_id_fkey(display_name),'
           'assigned_seller:sellers!orders_assigned_seller_id_fkey(id,display_name),'
-          'channels(display_name),campaigns(display_name),'
+          'channels(display_name),campaigns!orders_campaign_id_fkey(display_name),'
           'order_items(id,product_code,product_name,quantity,item_type,final_unit_price_cop,'
           'order_item_availability_checks(result,note,checker_role,checker_display_name,checked_at)),'
           'order_status_history(previous_status,status,actor_role,actor_display_name,note,created_at),'

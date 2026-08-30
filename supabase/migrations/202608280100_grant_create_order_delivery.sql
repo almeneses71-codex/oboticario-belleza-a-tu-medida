@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.create_order_request_with_delivery TO anon, authenticated;

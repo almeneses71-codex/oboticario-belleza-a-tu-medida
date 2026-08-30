@@ -6,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../domain/models/staff_order.dart';
 import '../domain/repositories/staff_repository.dart';
 import '../domain/staff_operation_error.dart';
-import 'app_theme.dart';
 
 class StaffApp extends StatefulWidget {
   const StaffApp({required this.repository, super.key});
@@ -33,11 +32,10 @@ class _StaffAppState extends State<StaffApp> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    debugShowCheckedModeBanner: false,
-    title: 'Gestión de pedidos',
-    theme: AppTheme.light,
-    home: AnimatedBuilder(
+  Widget build(BuildContext context) => PopScope(
+    onPopInvokedWithResult: (_, _) =>
+        FocusManager.instance.primaryFocus?.unfocus(),
+    child: AnimatedBuilder(
       animation: controller,
       builder: (context, _) => controller.profile == null
           ? StaffLoginScreen(controller: controller)
@@ -225,13 +223,13 @@ class StaffController extends ChangeNotifier {
     );
   }
 
-  Future<void> createFollowup(
+  Future<bool> createFollowup(
     StaffOrder order,
     String note,
     DateTime dueAt,
   ) async {
-    if (submitting || note.trim().length < 5) return;
-    await _runMutation(
+    if (submitting || note.trim().length < 5) return false;
+    return _runMutation(
       () => _repository!.createFollowup(order.id, note.trim(), dueAt),
     );
   }
@@ -292,7 +290,7 @@ class StaffController extends ChangeNotifier {
     );
   }
 
-  Future<void> _runMutation(Future<void> Function() action) async {
+  Future<bool> _runMutation(Future<void> Function() action) async {
     submitting = true;
     error = null;
     notifyListeners();
@@ -304,8 +302,10 @@ class StaffController extends ChangeNotifier {
           limit: orders.length > 25 ? orders.length : 25,
         ),
       );
+      return true;
     } catch (failure) {
       error = staffOperationErrorMessage(failure);
+      return false;
     } finally {
       submitting = false;
       notifyListeners();
@@ -628,7 +628,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
           const SizedBox(height: 12),
           TextField(
             decoration: const InputDecoration(
-              labelText: 'Número, cliente o vendedor',
+              labelText: 'Últimos dígitos, cliente o vendedor',
               prefixIcon: Icon(Icons.search),
               border: OutlineInputBorder(),
             ),
@@ -971,7 +971,7 @@ class StaffOrderCard extends StatelessWidget {
   final ValueChanged<String> onCancel;
   final List<StaffSellerOption> assignableSellers;
   final void Function(String sellerId, String reason) onAssign;
-  final void Function(String note, DateTime dueAt) onCreateFollowup;
+  final Future<bool> Function(String note, DateTime dueAt) onCreateFollowup;
   final void Function(StaffFollowup followup, String resultNote)
   onCompleteFollowup;
   final Future<bool> Function() onAuthorizeContact;
@@ -1372,487 +1372,449 @@ class StaffOrderCard extends StatelessWidget {
   );
 
   Future<void> _askShipping(BuildContext context) async {
-    final input = TextEditingController();
     bool? requiresDelivery;
     final amount = await showDialog<int>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final parsed = int.tryParse(input.text.replaceAll(RegExp(r'\D'), ''));
-          final canSave =
-              requiresDelivery == false ||
-              (requiresDelivery == true &&
-                  parsed != null &&
-                  parsed > 0 &&
-                  parsed <= 100000);
-          return AlertDialog(
-            title: const Text('Definir entrega del pedido'),
-            content: SizedBox(
-              width: 460,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('¿Este pedido requiere domicilio?'),
-                  ),
-                  ListTile(
-                    leading: Icon(
-                      requiresDelivery == false
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_off,
+      builder: (dialogContext) => _DialogTextControllerHost(
+        builder: (context, input) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final parsed = int.tryParse(
+              input.text.replaceAll(RegExp(r'\D'), ''),
+            );
+            final canSave =
+                requiresDelivery == false ||
+                (requiresDelivery == true &&
+                    parsed != null &&
+                    parsed > 0 &&
+                    parsed <= 100000);
+            return AlertDialog(
+              title: const Text('Definir entrega del pedido'),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('¿Este pedido requiere domicilio?'),
                     ),
-                    title: const Text('Entrega directa (sin domicilio)'),
-                    subtitle: const Text(
-                      'El producto se entrega directamente al cliente.',
-                    ),
-                    selected: requiresDelivery == false,
-                    onTap: () => setDialogState(() => requiresDelivery = false),
-                  ),
-                  ListTile(
-                    leading: Icon(
-                      requiresDelivery == true
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_off,
-                    ),
-                    title: const Text('Requiere domicilio'),
-                    subtitle: const Text(
-                      'El costo se suma por separado al total.',
-                    ),
-                    selected: requiresDelivery == true,
-                    onTap: () => setDialogState(() => requiresDelivery = true),
-                  ),
-                  if (requiresDelivery == true)
-                    TextField(
-                      controller: input,
-                      autofocus: true,
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => setDialogState(() {}),
-                      decoration: const InputDecoration(
-                        labelText: 'Costo del domicilio en pesos',
-                        helperText: 'Ingresa un valor entre 1 y 100.000.',
+                    ListTile(
+                      leading: Icon(
+                        requiresDelivery == false
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
                       ),
+                      title: const Text('Entrega directa (sin domicilio)'),
+                      subtitle: const Text(
+                        'El producto se entrega directamente al cliente.',
+                      ),
+                      selected: requiresDelivery == false,
+                      onTap: () =>
+                          setDialogState(() => requiresDelivery = false),
                     ),
-                ],
+                    ListTile(
+                      leading: Icon(
+                        requiresDelivery == true
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                      ),
+                      title: const Text('Requiere domicilio'),
+                      subtitle: const Text(
+                        'El costo se suma por separado al total.',
+                      ),
+                      selected: requiresDelivery == true,
+                      onTap: () =>
+                          setDialogState(() => requiresDelivery = true),
+                    ),
+                    if (requiresDelivery == true)
+                      TextField(
+                        controller: input,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        onChanged: (_) => setDialogState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Costo del domicilio en pesos',
+                          helperText: 'Ingresa un valor entre 1 y 100.000.',
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton(
-                onPressed: canSave
-                    ? () => Navigator.pop(
-                        dialogContext,
-                        requiresDelivery == true ? parsed : 0,
-                      )
-                    : null,
-                child: const Text('Guardar entrega'),
-              ),
-            ],
-          );
-        },
+              actions: [
+                TextButton(
+                  onPressed: () => _closeDialog(dialogContext),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: canSave
+                      ? () => _closeDialog(
+                          dialogContext,
+                          requiresDelivery == true ? parsed : 0,
+                        )
+                      : null,
+                  child: const Text('Guardar entrega'),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
-    input.dispose();
     if (amount != null) onShipping(amount);
   }
 
   Future<void> _askAvailability(BuildContext context) async {
-    final noteController = TextEditingController();
     final results = <String, String?>{
       for (final item in order.items) item.id: item.latestAvailability?.result,
     };
     final request = await showDialog<_AvailabilityRequest>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final complete = results.values.every((value) => value != null);
-          final needsNote = results.values.any(
-            (value) => value != null && value != 'available',
-          );
-          final noteValid =
-              !needsNote || noteController.text.trim().length >= 5;
-          return AlertDialog(
-            title: const Text('Consultar disponibilidad en tienda'),
-            content: SizedBox(
-              width: 520,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final item in order.items)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: DropdownButtonFormField<String>(
-                          initialValue: results[item.id],
-                          decoration: InputDecoration(
-                            labelText:
+      builder: (dialogContext) => _DialogTextControllerHost(
+        builder: (context, noteController) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final complete = results.values.every((value) => value != null);
+            final needsNote = results.values.any(
+              (value) => value != null && value != 'available',
+            );
+            final noteValid =
+                !needsNote || noteController.text.trim().length >= 5;
+            return AlertDialog(
+              title: const Text('Consultar disponibilidad en tienda'),
+              content: SizedBox(
+                width: 520,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final item in order.items)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
                                 '${item.name} · ${item.quantity} unidad(es)',
-                            border: const OutlineInputBorder(),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<String>(
+                                initialValue: results[item.id],
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Disponibilidad',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'available',
+                                    child: Text('Disponible'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'partial',
+                                    child: Text(
+                                      'Disponible parcialmente en tienda',
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'unavailable',
+                                    child: Text('No disponible'),
+                                  ),
+                                ],
+                                onChanged: (value) => setDialogState(
+                                  () => results[item.id] = value,
+                                ),
+                              ),
+                            ],
                           ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'available',
-                              child: Text('Disponible'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'partial',
-                              child: Text('Disponible parcialmente en tienda'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'unavailable',
-                              child: Text('No disponible'),
-                            ),
-                          ],
-                          onChanged: (value) =>
-                              setDialogState(() => results[item.id] = value),
+                        ),
+                      TextField(
+                        controller: noteController,
+                        onChanged: (_) => setDialogState(() {}),
+                        maxLength: 500,
+                        decoration: const InputDecoration(
+                          labelText: 'Observación',
+                          helperText:
+                              'Obligatoria cuando un producto no está completamente disponible.',
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                    TextField(
-                      controller: noteController,
-                      onChanged: (_) => setDialogState(() {}),
-                      maxLength: 500,
-                      decoration: const InputDecoration(
-                        labelText: 'Observación',
-                        helperText:
-                            'Obligatoria cuando un producto no está completamente disponible.',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Volver'),
-              ),
-              FilledButton(
-                onPressed: complete && noteValid
-                    ? () => Navigator.pop(
-                        dialogContext,
-                        _AvailabilityRequest(
-                          results.map((key, value) => MapEntry(key, value!)),
-                          noteController.text.trim().isEmpty
-                              ? null
-                              : noteController.text.trim(),
-                        ),
-                      )
-                    : null,
-                child: const Text('Guardar verificación'),
-              ),
-            ],
-          );
-        },
+              actions: [
+                TextButton(
+                  onPressed: () => _closeDialog(dialogContext),
+                  child: const Text('Volver'),
+                ),
+                FilledButton(
+                  onPressed: complete && noteValid
+                      ? () => _closeDialog(
+                          dialogContext,
+                          _AvailabilityRequest(
+                            results.map((key, value) => MapEntry(key, value!)),
+                            noteController.text.trim().isEmpty
+                                ? null
+                                : noteController.text.trim(),
+                          ),
+                        )
+                      : null,
+                  child: const Text('Guardar verificación'),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
-    noteController.dispose();
     if (request != null) onVerifyAvailability(request.results, request.note);
   }
 
   Future<void> _askCustomerAcceptance(BuildContext context) async {
-    final noteController = TextEditingController();
     var channel = 'whatsapp';
     final request = await showDialog<_CustomerAcceptanceRequest>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Registrar confirmación del cliente'),
-          content: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'El cliente debe haber aceptado productos, cantidades, precio, envío y total ${_money(order.totalCop)}.',
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: channel,
-                  decoration: const InputDecoration(
-                    labelText: 'Canal de confirmación',
-                    border: OutlineInputBorder(),
+      builder: (dialogContext) => _DialogTextControllerHost(
+        builder: (context, noteController) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            scrollable: true,
+            title: const Text('Registrar confirmación del cliente'),
+            content: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'El cliente debe haber aceptado productos, cantidades, precio, envío y total ${_money(order.totalCop)}.',
                   ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'whatsapp',
-                      child: Text('WhatsApp'),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: channel,
+                    decoration: const InputDecoration(
+                      labelText: 'Canal de confirmación',
+                      border: OutlineInputBorder(),
                     ),
-                    DropdownMenuItem(value: 'phone', child: Text('Llamada')),
-                  ],
-                  onChanged: (value) =>
-                      setDialogState(() => channel = value ?? 'whatsapp'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: noteController,
-                  onChanged: (_) => setDialogState(() {}),
-                  maxLength: 500,
-                  decoration: const InputDecoration(
-                    labelText: 'Observación',
-                    hintText:
-                        'Ejemplo: cliente acepta productos, envío y total.',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Volver'),
-            ),
-            FilledButton(
-              onPressed: noteController.text.trim().length >= 5
-                  ? () => Navigator.pop(
-                      dialogContext,
-                      _CustomerAcceptanceRequest(
-                        channel,
-                        noteController.text.trim(),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'whatsapp',
+                        child: Text('WhatsApp'),
                       ),
-                    )
-                  : null,
-              child: const Text('Guardar confirmación'),
+                      DropdownMenuItem(value: 'phone', child: Text('Llamada')),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => channel = value ?? 'whatsapp'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: noteController,
+                    onChanged: (_) => setDialogState(() {}),
+                    maxLength: 500,
+                    decoration: const InputDecoration(
+                      labelText: 'Observación',
+                      hintText:
+                          'Ejemplo: cliente acepta productos, envío y total.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => _closeDialog(dialogContext),
+                child: const Text('Volver'),
+              ),
+              FilledButton(
+                onPressed: noteController.text.trim().length >= 5
+                    ? () => _closeDialog(
+                        dialogContext,
+                        _CustomerAcceptanceRequest(
+                          channel,
+                          noteController.text.trim(),
+                        ),
+                      )
+                    : null,
+                child: const Text('Guardar confirmación'),
+              ),
+            ],
+          ),
         ),
       ),
     );
-    noteController.dispose();
     if (request != null) {
       onRecordCustomerAcceptance(request.channel, request.note);
     }
   }
 
   Future<void> _askAssignment(BuildContext context) async {
-    final reasonController = TextEditingController();
     var selectedSellerId = availableSellers.first.id;
     final request = await showDialog<_AssignmentRequest>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Cambiar responsable'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: selectedSellerId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Nuevo responsable',
-                  border: OutlineInputBorder(),
+      builder: (dialogContext) => _DialogTextControllerHost(
+        builder: (context, reasonController) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Cambiar responsable'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: selectedSellerId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nuevo responsable',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: availableSellers
+                      .map(
+                        (seller) => DropdownMenuItem(
+                          value: seller.id,
+                          child: Text('${seller.displayName} (${seller.code})'),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => selectedSellerId = value);
+                    }
+                  },
                 ),
-                items: availableSellers
-                    .map(
-                      (seller) => DropdownMenuItem(
-                        value: seller.id,
-                        child: Text('${seller.displayName} (${seller.code})'),
-                      ),
-                    )
-                    .toList(growable: false),
-                onChanged: (value) {
-                  if (value != null) {
-                    setDialogState(() => selectedSellerId = value);
+                const SizedBox(height: 16),
+                TextField(
+                  controller: reasonController,
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo obligatorio',
+                    hintText: 'Ejemplo: redistribución de carga operativa',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => _closeDialog(dialogContext),
+                child: const Text('Volver'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final reason = reasonController.text.trim();
+                  if (reason.length >= 5) {
+                    _closeDialog(
+                      dialogContext,
+                      _AssignmentRequest(selectedSellerId, reason),
+                    );
                   }
                 },
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: reasonController,
-                minLines: 2,
-                maxLines: 4,
-                maxLength: 500,
-                decoration: const InputDecoration(
-                  labelText: 'Motivo obligatorio',
-                  hintText: 'Ejemplo: redistribución de carga operativa',
-                  border: OutlineInputBorder(),
-                ),
+                child: const Text('Guardar asignación'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Volver'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final reason = reasonController.text.trim();
-                if (reason.length >= 5) {
-                  Navigator.pop(
-                    dialogContext,
-                    _AssignmentRequest(selectedSellerId, reason),
-                  );
-                }
-              },
-              child: const Text('Guardar asignación'),
-            ),
-          ],
         ),
       ),
     );
-    reasonController.dispose();
     if (request != null) onAssign(request.sellerId, request.reason);
   }
 
   Future<void> _askCancellation(BuildContext context) async {
-    final input = TextEditingController();
     final reason = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Cancelar pedido'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          maxLength: 500,
-          minLines: 2,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Motivo obligatorio',
-            hintText: 'Ejemplo: la tienda reportó el producto agotado',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Volver'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = input.text.trim();
-              if (value.length >= 5) Navigator.pop(dialogContext, value);
-            },
-            child: const Text('Confirmar cancelación'),
-          ),
-        ],
-      ),
-    );
-    input.dispose();
-    if (reason != null) onCancel(reason);
-  }
-
-  Future<void> _askFollowup(BuildContext context) async {
-    final noteController = TextEditingController();
-    var dueAt = DateTime.now().add(const Duration(days: 1));
-    final request = await showDialog<_FollowupRequest>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Programar seguimiento'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: noteController,
-                minLines: 2,
-                maxLines: 4,
-                maxLength: 500,
-                decoration: const InputDecoration(
-                  labelText: 'Próxima gestión',
-                  hintText:
-                      'Ejemplo: volver a consultar disponibilidad en la tienda',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                initialValue: 1,
-                decoration: const InputDecoration(
-                  labelText: 'Plazo',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 0, child: Text('Hoy')),
-                  DropdownMenuItem(value: 1, child: Text('Mañana')),
-                  DropdownMenuItem(value: 3, child: Text('En 3 días')),
-                  DropdownMenuItem(value: 7, child: Text('En 7 días')),
-                ],
-                onChanged: (days) {
-                  if (days != null) {
-                    setDialogState(
-                      () => dueAt = DateTime.now().add(
-                        Duration(days: days, hours: 1),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ],
+      builder: (dialogContext) => _DialogTextControllerHost(
+        builder: (context, input) => AlertDialog(
+          title: const Text('Cancelar pedido'),
+          content: TextField(
+            controller: input,
+            autofocus: true,
+            maxLength: 500,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Motivo obligatorio',
+              hintText: 'Ejemplo: la tienda reportó el producto agotado',
+            ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: () => _closeDialog(dialogContext),
               child: const Text('Volver'),
             ),
             FilledButton(
               onPressed: () {
-                final note = noteController.text.trim();
-                if (note.length >= 5) {
-                  Navigator.pop(dialogContext, _FollowupRequest(note, dueAt));
-                }
+                final value = input.text.trim();
+                if (value.length >= 5) _closeDialog(dialogContext, value);
               },
-              child: const Text('Programar'),
+              child: const Text('Confirmar cancelación'),
             ),
           ],
         ),
       ),
     );
-    noteController.dispose();
-    if (request != null) onCreateFollowup(request.note, request.dueAt);
+    if (reason != null) onCancel(reason);
+  }
+
+  Future<void> _askFollowup(BuildContext context) async {
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) =>
+          _ProgramFollowupDialog(onSubmit: onCreateFollowup),
+    );
+    if (created == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Seguimiento programado correctamente')),
+      );
+    }
   }
 
   Future<void> _askCompleteFollowup(
     BuildContext context,
     StaffFollowup followup,
   ) async {
-    final input = TextEditingController();
     final result = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Registrar resultado del seguimiento'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Tarea: ${followup.note}'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: input,
-              minLines: 2,
-              maxLines: 4,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                labelText: '¿Qué resultado tuvo la gestión?',
-                hintText: 'Ejemplo: cliente confirmó que desea continuar.',
-                border: OutlineInputBorder(),
+      builder: (dialogContext) => _DialogTextControllerHost(
+        builder: (context, input) => AlertDialog(
+          title: const Text('Registrar resultado del seguimiento'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Tarea: ${followup.note}'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: input,
+                minLines: 2,
+                maxLines: 4,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  labelText: '¿Qué resultado tuvo la gestión?',
+                  hintText: 'Ejemplo: cliente confirmó que desea continuar.',
+                  border: OutlineInputBorder(),
+                ),
               ),
+              const SizedBox(height: 8),
+              const Text(
+                'Esta acción solo cierra esta tarea interna. No confirma, entrega ni completa el pedido.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => _closeDialog(dialogContext),
+              child: const Text('Volver'),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Esta acción solo cierra esta tarea interna. No confirma, entrega ni completa el pedido.',
+            FilledButton(
+              onPressed: () {
+                final value = input.text.trim();
+                if (value.length >= 5) _closeDialog(dialogContext, value);
+              },
+              child: const Text('Finalizar esta tarea'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Volver'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = input.text.trim();
-              if (value.length >= 5) Navigator.pop(dialogContext, value);
-            },
-            child: const Text('Finalizar esta tarea'),
-          ),
-        ],
       ),
     );
-    input.dispose();
     if (result != null) onCompleteFollowup(followup, result);
   }
 
@@ -2007,10 +1969,152 @@ class _AssignmentRequest {
   final String reason;
 }
 
-class _FollowupRequest {
-  const _FollowupRequest(this.note, this.dueAt);
-  final String note;
-  final DateTime dueAt;
+void _closeDialog<T>(BuildContext context, [T? result]) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  Navigator.of(context).pop(result);
+}
+
+class _DialogTextControllerHost extends StatefulWidget {
+  const _DialogTextControllerHost({required this.builder});
+
+  final Widget Function(BuildContext context, TextEditingController controller)
+  builder;
+
+  @override
+  State<_DialogTextControllerHost> createState() =>
+      _DialogTextControllerHostState();
+}
+
+class _DialogTextControllerHostState extends State<_DialogTextControllerHost> {
+  final controller = TextEditingController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, controller);
+}
+
+class _ProgramFollowupDialog extends StatefulWidget {
+  const _ProgramFollowupDialog({required this.onSubmit});
+
+  final Future<bool> Function(String note, DateTime dueAt) onSubmit;
+
+  @override
+  State<_ProgramFollowupDialog> createState() => _ProgramFollowupDialogState();
+}
+
+class _ProgramFollowupDialogState extends State<_ProgramFollowupDialog> {
+  final noteController = TextEditingController();
+  DateTime dueAt = DateTime.now().add(const Duration(days: 1));
+  bool saving = false;
+  String? error;
+
+  @override
+  void dispose() {
+    noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (saving) return;
+    final note = noteController.text.trim();
+    if (note.length < 5) {
+      setState(
+        () => error = 'Describe la próxima gestión en al menos 5 caracteres.',
+      );
+      return;
+    }
+    setState(() {
+      saving = true;
+      error = null;
+    });
+    final saved = await widget.onSubmit(note, dueAt);
+    if (!mounted) return;
+    if (saved) {
+      _closeDialog(context, true);
+      return;
+    }
+    setState(() {
+      saving = false;
+      error = 'No fue posible programar el seguimiento. Inténtalo nuevamente.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Programar seguimiento'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: noteController,
+          enabled: !saving,
+          minLines: 2,
+          maxLines: 4,
+          maxLength: 500,
+          onChanged: (_) {
+            if (error != null) setState(() => error = null);
+          },
+          decoration: const InputDecoration(
+            labelText: 'Próxima gestión',
+            hintText: 'Ejemplo: volver a consultar disponibilidad en la tienda',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<int>(
+          initialValue: 1,
+          decoration: const InputDecoration(
+            labelText: 'Plazo',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 0, child: Text('Hoy')),
+            DropdownMenuItem(value: 1, child: Text('Mañana')),
+            DropdownMenuItem(value: 3, child: Text('En 3 días')),
+            DropdownMenuItem(value: 7, child: Text('En 7 días')),
+          ],
+          onChanged: saving
+              ? null
+              : (days) {
+                  if (days != null) {
+                    setState(
+                      () => dueAt = DateTime.now().add(
+                        Duration(days: days, hours: 1),
+                      ),
+                    );
+                  }
+                },
+        ),
+        if (error != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: saving ? null : () => _closeDialog(context),
+        child: const Text('Volver'),
+      ),
+      FilledButton(
+        onPressed: saving ? null : _submit,
+        child: saving
+            ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Programar'),
+      ),
+    ],
+  );
 }
 
 class _AvailabilityRequest {

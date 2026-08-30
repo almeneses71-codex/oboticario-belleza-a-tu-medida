@@ -10,7 +10,9 @@ abstract interface class OrderRepository {
 abstract interface class WheelRepository {
   Future<WheelCampaignStatus> loadWheelCampaignStatus();
 
+
   Future<WheelBenefit> spinWheel({
+    required String journeyId,
     required CustomerDraft customer,
     required List<OrderItemDraft> items,
   });

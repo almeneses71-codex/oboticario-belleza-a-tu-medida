@@ -398,7 +398,9 @@ class _FakeWheelOrderRepository extends _FakeOrderRepository
       const WheelCampaignStatus(active: true);
 
   @override
+
   Future<WheelBenefit> spinWheel({
+    required String journeyId,
     required CustomerDraft customer,
     required List<OrderItemDraft> items,
   }) async {

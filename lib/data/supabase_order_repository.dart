@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../domain/models/order.dart';
@@ -23,6 +22,7 @@ class SupabaseOrderRepository
         .eq('available', true)
         .eq('eligible', true)
         .eq('is_suggested_kit', false);
+
     return response.map((row) => row['id'] as String).toSet();
   }
 
@@ -31,47 +31,31 @@ class SupabaseOrderRepository
     final response = await _client.rpc<Map<String, dynamic>>(
       'get_amor_amistad_2026_status',
     );
-    return WheelCampaignStatus(active: response['active'] as bool? ?? false);
+
+    return WheelCampaignStatus(
+      active: response['active'] as bool? ?? false,
+    );
   }
 
   @override
   Future<WheelBenefit> spinWheel({
+    required String journeyId,
     required CustomerDraft customer,
     required List<OrderItemDraft> items,
   }) async {
-    if (kDebugMode) {
-      try {
-        final ids = items.map((item) => item.productId).toSet().toList();
-        final catalogRows = await _client
-            .from('products')
-            .select('id,code,name,active,available,eligible,is_suggested_kit')
-            .inFilter('id', ids);
-        for (final item in items) {
-          final matches = catalogRows.where(
-            (row) => row['id'] == item.productId,
-          );
-          final row = matches.isEmpty ? null : matches.first;
-          debugPrint(
-            '[wheel-diagnostic] productId=${item.productId} '
-            'productCode=${item.productCode} itemType=${item.itemType.name} '
-            'name=${item.productName} active=${row?['active']} '
-            'available=${row?['available']} eligible=${row?['eligible']} '
-            'isSuggestedKit=${row?['is_suggested_kit']}',
-          );
-        }
-      } catch (error) {
-        debugPrint('[wheel-diagnostic] catalog lookup failed: $error');
-      }
-    }
     final response = await _client.rpc<Map<String, dynamic>>(
       'spin_amor_amistad_2026',
       params: {
         'payload': {
+          'journeyId': journeyId,
           'customer': customer.toJson(),
-          'items': items.map((item) => item.toJson()).toList(growable: false),
+          'items': items
+              .map((item) => item.toJson())
+              .toList(growable: false),
         },
       },
     );
+
     return WheelBenefit(
       spinId: response['spin_id'] as String,
       discountPercent: (response['discount_percent'] as num).toInt(),
@@ -84,12 +68,18 @@ class SupabaseOrderRepository
   @override
   Future<CreatedOrder> createOrder(OrderDraft draft) async {
     if (!draft.isValid) {
-      throw const FormatException('La solicitud de pedido está incompleta.');
+      throw const FormatException(
+        'La solicitud de pedido está incompleta.',
+      );
     }
+
     final response = await _client.rpc<Map<String, dynamic>>(
       'create_order_request_with_delivery',
-      params: {'payload': draft.toJson()},
+      params: {
+        'payload': draft.toJson(),
+      },
     );
+
     return CreatedOrder(
       id: response['order_id'] as String,
       number: response['order_number'] as String,
