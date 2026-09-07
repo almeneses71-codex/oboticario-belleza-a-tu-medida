@@ -5,7 +5,11 @@ import '../domain/models/customer_draft.dart';
 import '../domain/repositories/order_repository.dart';
 
 class SupabaseOrderRepository
-    implements OrderRepository, WheelRepository, ProductAvailabilityRepository {
+    implements
+        OrderRepository,
+        WheelRepository,
+        ProductAvailabilityRepository,
+        ImmediateStockRepository {
   const SupabaseOrderRepository(this._client);
 
   final SupabaseClient _client;
@@ -27,14 +31,32 @@ class SupabaseOrderRepository
   }
 
   @override
+  Future<Set<String>> loadImmediateStockCodes(Set<String> codes) async {
+    if (codes.isEmpty) return const {};
+    final response = await _client.rpc<List<dynamic>>(
+      'get_immediate_stock',
+      params: {'requested_codes': codes.toList(growable: false)},
+    );
+    final rows = response.cast<Map<String, dynamic>>();
+    final returnedCodes = rows.map((row) => row['code'] as String).toSet();
+    if (rows.length != codes.length ||
+        returnedCodes.length != codes.length ||
+        !returnedCodes.containsAll(codes)) {
+      throw const FormatException('Respuesta incompleta de inventario físico.');
+    }
+    return rows
+        .where((row) => row['has_immediate_stock'] == true)
+        .map((row) => row['code'] as String)
+        .toSet();
+  }
+
+  @override
   Future<WheelCampaignStatus> loadWheelCampaignStatus() async {
     final response = await _client.rpc<Map<String, dynamic>>(
       'get_amor_amistad_2026_status',
     );
 
-    return WheelCampaignStatus(
-      active: response['active'] as bool? ?? false,
-    );
+    return WheelCampaignStatus(active: response['active'] as bool? ?? false);
   }
 
   @override
@@ -49,9 +71,7 @@ class SupabaseOrderRepository
         'payload': {
           'journeyId': journeyId,
           'customer': customer.toJson(),
-          'items': items
-              .map((item) => item.toJson())
-              .toList(growable: false),
+          'items': items.map((item) => item.toJson()).toList(growable: false),
         },
       },
     );
@@ -68,16 +88,12 @@ class SupabaseOrderRepository
   @override
   Future<CreatedOrder> createOrder(OrderDraft draft) async {
     if (!draft.isValid) {
-      throw const FormatException(
-        'La solicitud de pedido está incompleta.',
-      );
+      throw const FormatException('La solicitud de pedido está incompleta.');
     }
 
     final response = await _client.rpc<Map<String, dynamic>>(
       'create_order_request_with_delivery',
-      params: {
-        'payload': draft.toJson(),
-      },
+      params: {'payload': draft.toJson()},
     );
 
     return CreatedOrder(

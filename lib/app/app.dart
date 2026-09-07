@@ -233,7 +233,36 @@ class _WelcomeScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 220),
+          SizedBox(
+            height: 220,
+            child: Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  key: const Key('temporary-staff-access'),
+                  tooltip: 'Gestión de pedidos',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppTheme.green,
+                    minimumSize: const Size(52, 52),
+                    side: const BorderSide(
+                      color: AppTheme.green,
+                      width: 2,
+                    ),
+                    elevation: 4,
+                    shadowColor: Colors.black26,
+                  ),
+                  icon: const Icon(
+                    Icons.admin_panel_settings,
+                    size: 30,
+                  ),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => StaffApp(repository: staffRepository),
+                    ),
+                  ),
+                ),
+              ),
+          ),
           Card(
             color: const Color(0xF7FFFBF4),
             child: Padding(
@@ -295,21 +324,11 @@ class _WelcomeScreen extends StatelessWidget {
               context,
             ).textTheme.bodySmall?.copyWith(color: const Color(0xFF465B54)),
           ),
-          if (staffRepository != null)
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                key: const Key('temporary-staff-access'),
-                tooltip: 'Acceso administrativo de prueba',
-                icon: const Icon(Icons.admin_panel_settings_outlined, size: 20),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => StaffApp(repository: staffRepository),
-                  ),
-                ),
-              ),
-            ),
-        ],
+ 
+        const SizedBox(height: 14),
+
+        ], 
+        
       ),
     ),
   );
@@ -627,6 +646,9 @@ class _ResultScreenState extends State<_ResultScreen> {
             _ProductCard(
               ranked: primary,
               primary: true,
+              immediateDelivery: controller.hasImmediateStock(
+                primary.product.code,
+              ),
               selected: _isSelected(primary.product),
               onSelect: () => _toggleProduct(primary.product),
             ),
@@ -640,6 +662,9 @@ class _ResultScreenState extends State<_ResultScreen> {
               _ProductCard(
                 ranked: result.alternative!,
                 primary: false,
+                immediateDelivery: controller.hasImmediateStock(
+                  result.alternative!.product.code,
+                ),
                 selected: _isSelected(result.alternative!.product),
                 onSelect: () => _toggleProduct(result.alternative!.product),
               ),
@@ -681,9 +706,9 @@ class _ResultScreenState extends State<_ResultScreen> {
             if (orderSelection != null) ...[
               const SizedBox(height: 18),
               FilledButton.icon(
-                onPressed: () => _showRequest(context, orderSelection!),
+                onPressed: () => _showDeliveryNextStep(),
                 icon: const Icon(Icons.arrow_forward),
-                label: const Text('Continuar con mi elección'),
+                label: const Text('Continuar con mi selección'),
               ),
             ],
             const SizedBox(height: 10),
@@ -719,6 +744,7 @@ class _ResultScreenState extends State<_ResultScreen> {
       orderSelection?.items.any((item) => item.productId == product.id) == true;
 
   void _toggleProduct(Product product) {
+    
     final result = controller.result!;
     final recommendedPrimary = result.primary!.product;
     final recommendedAlternative = result.alternative?.product;
@@ -762,6 +788,35 @@ class _ResultScreenState extends State<_ResultScreen> {
     for (final candidate in nextCrossSell.candidates) {
       controller.recordCrossSellShown(candidate);
     }
+    
+  }
+
+  Future<void> _showDeliveryNextStep() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: const Text('¡Excelente elección!'),
+        content: const Text(
+          'Ya elegiste tus productos.\n'
+          'Ahora dinos cómo quieres recibir tu pedido.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Atrás'),
+          ),
+          FilledButton(
+            key: const Key('continue-to-delivery'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+    if (proceed == true && mounted && orderSelection != null) {
+      await _showRequest(context, orderSelection!);
+    }
   }
 
   void _toggleComplementary(CrossSellCandidate candidate) {
@@ -787,6 +842,7 @@ class _ResultScreenState extends State<_ResultScreen> {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final whatsappController = TextEditingController();
+    final scrollController = ScrollController();
     var showSummary = false;
     await showModalBottomSheet<void>(
       context: context,
@@ -797,6 +853,7 @@ class _ResultScreenState extends State<_ResultScreen> {
           return Form(
             key: formKey,
             child: SingleChildScrollView(
+              controller: scrollController,
               padding: EdgeInsets.fromLTRB(
                 22,
                 22,
@@ -830,6 +887,17 @@ class _ResultScreenState extends State<_ResultScreen> {
                     requiresDelivery: requiresDelivery,
                     deliveryDetails: deliveryDetails,
                   );
+
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (scrollController.hasClients) {
+                      scrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 350),
+                        curve: Curves.easeOut,
+                      );
+                    }
+                  });
+
                   return created;
                 },
                 onSpin: () => controller.spinWheel(
@@ -883,12 +951,14 @@ class _ProductCard extends StatelessWidget {
   const _ProductCard({
     required this.ranked,
     required this.primary,
+    required this.immediateDelivery,
     required this.selected,
     required this.onSelect,
   });
 
   final RankedProduct ranked;
   final bool primary;
+  final bool immediateDelivery;
   final bool selected;
   final VoidCallback onSelect;
 
@@ -952,6 +1022,24 @@ class _ProductCard extends StatelessWidget {
                   : 'Catálogo vencido · Consulta precio vigente',
             ),
             Text('Disponibilidad revisada: ${product.updated}'),
+            if (immediateDelivery) ...[
+              const SizedBox(height: 10),
+              Chip(
+                key: ValueKey('immediate-delivery-${product.code}'),
+                avatar: const Icon(
+                  Icons.local_shipping_outlined,
+                  size: 18,
+                  color: AppTheme.green,
+                ),
+                label: const Text('Entrega inmediata'),
+                backgroundColor: const Color(0xFFE8F5EE),
+                side: const BorderSide(color: Color(0xFFB8DCC9)),
+                labelStyle: const TextStyle(
+                  color: AppTheme.green,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             if (product.familyOrActive.isNotEmpty) ...[
               Text(
@@ -1247,7 +1335,7 @@ class _RequestContentState extends State<_RequestContent>
             ? '¡Solicitud recibida!'
             : widget.showSummary
             ? 'Resumen de tu solicitud'
-            : 'Tus datos',
+            : 'Tu solicitud',
         style: Theme.of(context).textTheme.headlineMedium,
       ),
       const SizedBox(height: 18),
@@ -1304,16 +1392,13 @@ class _RequestContentState extends State<_RequestContent>
           headline: 'Te contactaremos por WhatsApp',
 
           message:
-            'Tu solicitud ya quedó registrada. Revisaremos los detalles de tu pedido y te contactaremos por WhatsApp en el menor tiempo posible.',
+              'Tu solicitud ya quedó registrada. Revisaremos los detalles de tu pedido y te contactaremos por WhatsApp en el menor tiempo posible.',
         ),
         const SizedBox(height: 12),
 
         const Text(
           'PRODUCTOS SOLICITADOS',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: AppTheme.green,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.green),
         ),
         const SizedBox(height: 8),
         for (final item in widget.selection.items) ...[
@@ -1375,6 +1460,10 @@ class _RequestContentState extends State<_RequestContent>
           label: const Text('Realizar otra compra'),
         ),
       ] else if (!widget.showSummary) ...[
+        _deliverySection(),
+        const SizedBox(height: 18),
+        Text('Tus datos', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 14),
         TextFormField(
           controller: widget.nameController,
           textCapitalization: TextCapitalization.words,
@@ -1382,9 +1471,20 @@ class _RequestContentState extends State<_RequestContent>
             labelText: 'Nombre',
             border: OutlineInputBorder(),
           ),
-          validator: (value) => value == null || value.trim().isEmpty
-              ? 'Ingresa tu nombre.'
-              : null,
+
+          validator: (value) {
+            final name = value?.trim() ?? '';
+
+            if (name.isEmpty) {
+              return 'Ingresa tu nombre.';
+            }
+
+            if (name.length < 3) {
+              return 'Ingresa un nombre válido de al menos 3 caracteres.';
+            }
+
+            return null;
+          },
         ),
         const SizedBox(height: 14),
         TextFormField(
@@ -1437,7 +1537,17 @@ class _RequestContentState extends State<_RequestContent>
         ),
         const SizedBox(height: 20),
         FilledButton(
-          onPressed: widget.onReview,
+          onPressed: () {
+            if (!_deliveryIsComplete) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Selecciona el tipo de envío y completa los datos de entrega.'),
+                ),
+              );
+              return;
+            }
+            widget.onReview();
+          },
           child: const Text('Revisar mi solicitud'),
         ),
       ] else ...[
@@ -1502,58 +1612,7 @@ class _RequestContentState extends State<_RequestContent>
           _SummaryProductCard(item: item, product: _productFor(item.productId)),
           const SizedBox(height: 12),
         ],
-        Text(
-          '¿Cómo quieres recibir tu pedido?',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        Column(
-          children: [
-            RadioListTile<bool>(
-              value: true,
-              groupValue: requiresDelivery,
-              onChanged: spinning || submitting
-                  ? null
-                  : (value) => setState(() => requiresDelivery = value),
-              title: const Text('Envío a domicilio'),
-              subtitle: const Text('El costo del envío está por confirmar.'),
-            ),
-            RadioListTile<bool>(
-              value: false,
-              groupValue: requiresDelivery,
-              onChanged: spinning || submitting
-                  ? null
-                  : (value) => setState(() => requiresDelivery = value),
-              title: const Text('Acordar entrega con asesor'),
-            ),
-          ],
-        ),
-        if (requiresDelivery == true) ...[
-          _DeliveryField(
-            controller: cityController,
-            label: 'Ciudad/municipio',
-            onChanged: (_) => setState(() {}),
-          ),
-          _DeliveryField(
-            controller: addressController,
-            label: 'Dirección',
-            onChanged: (_) => setState(() {}),
-          ),
-          _DeliveryField(
-            controller: neighborhoodController,
-            label: 'Barrio',
-            onChanged: (_) => setState(() {}),
-          ),
-          _DeliveryField(
-            controller: recipientController,
-            label: 'Nombre de quien recibe',
-            onChanged: (_) => setState(() {}),
-          ),
-          _DeliveryField(
-            controller: directionsController,
-            label: 'Referencia/indicaciones (opcional)',
-            onChanged: (_) => setState(() {}),
-          ),
-        ],
+        _SummaryRow(label: 'Tipo de envío', value: _deliveryLabel),
         const SizedBox(height: 14),
         _SummaryTotalsCard(
           subtotalCop:
@@ -1596,6 +1655,71 @@ class _RequestContentState extends State<_RequestContent>
     ],
   );
 
+  Widget _deliverySection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Text(
+        'Último paso · Entrega',
+        style: TextStyle(color: AppTheme.green, fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      const Text('Elige una opción para continuar con tu solicitud.'),
+      const SizedBox(height: 8),
+      Text(
+        '¿Cómo quieres recibir tu pedido?',
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      Column(
+        children: [
+          RadioListTile<bool>(
+            value: true,
+            groupValue: requiresDelivery,
+            onChanged: spinning || submitting
+                ? null
+                : (value) => setState(() => requiresDelivery = value),
+            title: const Text('Envío a domicilio'),
+            subtitle: const Text('El costo del envío está por confirmar.'),
+          ),
+          RadioListTile<bool>(
+            value: false,
+            groupValue: requiresDelivery,
+            onChanged: spinning || submitting
+                ? null
+                : (value) => setState(() => requiresDelivery = value),
+            title: const Text('Acordar entrega con asesor'),
+          ),
+        ],
+      ),
+      if (requiresDelivery == true) ...[
+        _DeliveryField(
+          controller: cityController,
+          label: 'Ciudad/municipio',
+          onChanged: (_) => setState(() {}),
+        ),
+        _DeliveryField(
+          controller: addressController,
+          label: 'Dirección',
+          onChanged: (_) => setState(() {}),
+        ),
+        _DeliveryField(
+          controller: neighborhoodController,
+          label: 'Barrio',
+          onChanged: (_) => setState(() {}),
+        ),
+        _DeliveryField(
+          controller: recipientController,
+          label: 'Nombre de quien recibe',
+          onChanged: (_) => setState(() {}),
+        ),
+        _DeliveryField(
+          controller: directionsController,
+          label: 'Referencia/indicaciones (opcional)',
+          onChanged: (_) => setState(() {}),
+        ),
+      ],
+    ],
+  );
+
   Product? _productFor(String productId) {
     for (final candidate in widget.products) {
       if (candidate.id == productId) return candidate;
@@ -1626,7 +1750,6 @@ class _RequestContentState extends State<_RequestContent>
       );
       if (mounted) setState(() => createdOrder = order);
     } catch (error) {
-
       if (mounted) {
         setState(() => submissionError = _friendlyRequestError(error));
       }
@@ -1668,7 +1791,7 @@ class _RequestContentState extends State<_RequestContent>
 
   String _friendlyRequestError(Object error, {bool wheel = false}) {
     final value = error.toString().toLowerCase();
-    if (value.contains('product_unavailable') || value.contains('p0001')) {
+    if (value.contains('product_unavailable')) {
       return 'Uno de los productos ya no está disponible. '
           'Actualiza tu selección o pide asesoría.';
     }
@@ -2190,12 +2313,46 @@ class _VisualBackground extends StatelessWidget {
         right: 0,
         height: prominent ? 245 : 220,
         child: Image.asset(
-          'assets/images/primera_pantalla.jpeg',
+          prominent
+              ? 'assets/images/welcome/portada_amor_amistad_2026.png'
+              : 'assets/images/primera_pantalla.jpeg',
           alignment: Alignment.topCenter,
           fit: BoxFit.cover,
           opacity: AlwaysStoppedAnimation(prominent ? 1 : 0.14),
         ),
       ),
+      if (prominent)
+        Positioned(
+          top: 178,
+          left: 0,
+          right: 0,
+          height: 67,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xE6FFF9F0), AppTheme.background],
+              ),
+            ),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'Regala belleza, regala emociones',
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppTheme.green,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       Positioned.fill(
         child: ColoredBox(
           color: prominent ? const Color(0x0DFFFBF4) : const Color(0x80FFFBF4),

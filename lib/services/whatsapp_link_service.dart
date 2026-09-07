@@ -44,8 +44,10 @@ class WhatsAppLinkService {
     return Uri.https('wa.me', '/${AppConfig.whatsappNumber}', {
       'text':
           'Hola, ${AppConfig.advisorName}. Acabo de registrar la solicitud '
-          '$orderNumber a nombre de $customerName. Productos: $products. '
-          'Entrega: $deliveryMethod. Quisiera continuar con la atención de mi pedido.',
+          '$orderNumber a nombre de $customerName.\n\n'
+          'Productos: $products.\n'
+          'Entrega: $deliveryMethod.\n\n'
+          'Quisiera continuar con la atención de mi pedido.',
     });
   }
 

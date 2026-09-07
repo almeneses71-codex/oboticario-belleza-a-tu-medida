@@ -10,7 +10,6 @@ abstract interface class OrderRepository {
 abstract interface class WheelRepository {
   Future<WheelCampaignStatus> loadWheelCampaignStatus();
 
-
   Future<WheelBenefit> spinWheel({
     required String journeyId,
     required CustomerDraft customer,
@@ -20,6 +19,10 @@ abstract interface class WheelRepository {
 
 abstract interface class ProductAvailabilityRepository {
   Future<Set<String>> loadPurchasableProductIds();
+}
+
+abstract interface class ImmediateStockRepository {
+  Future<Set<String>> loadImmediateStockCodes(Set<String> codes);
 }
 
 class OrderSubmissionUnavailable implements Exception {

@@ -6,24 +6,63 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'catalog contains 64 individual products and 4 suggested kits',
-    () async {
-      final raw = await rootBundle.loadString('assets/data/products.json');
-      final products = (jsonDecode(raw) as List<dynamic>)
-          .cast<Map<String, dynamic>>();
-      final ids = products.map((item) => item['id'] as String).toList();
+  test('catalog contains the 252 eligible September products', () async {
+    final raw = await rootBundle.loadString('assets/data/products.json');
+    final products = (jsonDecode(raw) as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+    final ids = products.map((item) => item['id'] as String).toList();
 
-      expect(products, hasLength(68));
-      expect(ids.toSet(), hasLength(68));
-      expect(
-        products.where((item) => item['isSuggestedKit'] == true),
-        hasLength(4),
-      );
-      expect(products.where((item) => item['eligible'] == false), hasLength(1));
-      expect(products.every((item) => (item['priceCop'] as num) >= 0), isTrue);
-    },
-  );
+    final codes = products.map((item) => item['code'] as String).toList();
+    const categories = {
+      'perfumeria',
+      'corporal',
+      'facial',
+      'cabello',
+      'regalos',
+    };
+    const recipients = {'Mujer', 'Hombre', 'Unisex'};
+    const criticalFields = {
+      'id',
+      'category',
+      'recipient',
+      'name',
+      'presentation',
+      'priceCop',
+      'familyOrActive',
+      'intensity',
+      'need',
+      'profile',
+      'moment',
+      'code',
+      'updated',
+    };
+
+    expect(products, hasLength(252));
+    expect(ids.toSet(), hasLength(252));
+    expect(codes.toSet(), hasLength(252));
+    expect(products.every((item) => item['eligible'] == true), isTrue);
+    expect(products.every((item) => item['available'] == true), isTrue);
+    expect(products.every((item) => item['isSuggestedKit'] == false), isTrue);
+    expect(
+      products.every((item) => categories.contains(item['category'])),
+      isTrue,
+    );
+    expect(
+      products.every((item) => recipients.contains(item['recipient'])),
+      isTrue,
+    );
+    expect(
+      products.every(
+        (item) => criticalFields.every((field) {
+          final value = item[field];
+          return value != null && (value is! String || value.isNotEmpty);
+        }),
+      ),
+      isTrue,
+    );
+    expect(products.every((item) => (item['priceCop'] as num) > 0), isTrue);
+    expect(products.where((item) => item['category'] == 'maquillaje'), isEmpty);
+  });
 
   test(
     'each category contains four questions after category selection',

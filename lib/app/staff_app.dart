@@ -88,6 +88,42 @@ class StaffController extends ChangeNotifier {
     }
   }
 
+ 
+  Future<void> signInWithGoogle() async {
+    if (!configured || submitting) return;
+
+    final repository = _repository!;
+    submitting = true;
+    error = null;
+    notifyListeners();
+
+    try {
+      profile = await repository.signInWithGoogle();
+
+      await _loadFirstPage();
+
+      if (profile!.canViewAll) {
+        assignableSellers = await repository.loadAssignableSellers();
+      }
+    } catch (failure) {
+      debugPrint('No fue posible iniciar sesión con Google: $failure');
+
+      final authenticated = repository.hasSession;
+      profile = null;
+
+      if (authenticated) {
+        await repository.signOut();
+      }
+
+      error = authenticated
+          ? 'El acceso con Google fue aceptado, pero no fue posible cargar el panel.'
+          : 'No fue posible ingresar con Google.';
+    } finally {
+      submitting = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> signIn(String email, String password) async {
     if (!configured || submitting) return;
     final repository = _repository!;
@@ -402,6 +438,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                     ),
                   ],
                   const SizedBox(height: 20),
+
                   FilledButton.icon(
                     onPressed: widget.controller.submitting ? null : _submit,
                     icon: widget.controller.submitting
@@ -411,6 +448,16 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                           )
                         : const Icon(Icons.login),
                     label: const Text('Ingresar'),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  OutlinedButton.icon(
+                    onPressed: widget.controller.submitting
+                        ? null
+                        : widget.controller.signInWithGoogle,
+                    icon: const Icon(Icons.account_circle_outlined),
+                    label: const Text('Continuar con Google'),
                   ),
                 ],
               ),

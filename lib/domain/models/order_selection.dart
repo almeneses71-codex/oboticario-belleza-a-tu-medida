@@ -36,6 +36,14 @@ class OrderSelection {
         'El producto principal no puede complementarse consigo mismo.',
       );
     }
+
+    if (_others.values.any((item) => item.productId == product.id)) {
+      throw ArgumentError(
+        'El producto ya fue agregado como alternativa.',
+      );
+    }
+
+
     if (product.isSuggestedKit) {
       throw ArgumentError(
         'Un kit sugerido no puede venderse como kit oficial.',

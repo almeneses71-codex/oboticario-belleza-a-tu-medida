@@ -126,10 +126,10 @@ class RecommendationEngine {
       confidence: primary.score >= 85
           ? RecommendationConfidence.high
           : primary.score >= 70
-              ? RecommendationConfidence.good
-              : primary.score >= 55
-                  ? RecommendationConfidence.moderate
-                  : RecommendationConfidence.low,
+          ? RecommendationConfidence.good
+          : primary.score >= 55
+          ? RecommendationConfidence.moderate
+          : RecommendationConfidence.low,
     );
   }
 
@@ -184,8 +184,8 @@ class RecommendationEngine {
   }
 
   bool _passes(Product product, AnswerOption option) {
-    final recipients =
-        (option.hardFilters['recipients'] as List<dynamic>?)?.cast<String>();
+    final recipients = (option.hardFilters['recipients'] as List<dynamic>?)
+        ?.cast<String>();
 
     if (recipients != null && recipients.isNotEmpty) {
       final accepted = recipients
@@ -200,8 +200,8 @@ class RecommendationEngine {
       }
     }
 
-    final types =
-        (option.hardFilters['types'] as List<dynamic>?)?.cast<String>();
+    final types = (option.hardFilters['types'] as List<dynamic>?)
+        ?.cast<String>();
 
     return types == null ||
         types.isEmpty ||
@@ -217,14 +217,15 @@ class RecommendationEngine {
       return difference == 0
           ? 100
           : difference == 1
-              ? 70
-              : difference == 2
-                  ? 40
-                  : 0;
+          ? 70
+          : difference == 2
+          ? 40
+          : 0;
     }
 
-    var quality =
-        option.hardFilters.isNotEmpty && _passes(product, option) ? 100 : 0;
+    var quality = option.hardFilters.isNotEmpty && _passes(product, option)
+        ? 100
+        : 0;
 
     for (final boost in option.boosts) {
       if (boost.queries.any(
@@ -240,15 +241,14 @@ class RecommendationEngine {
   }
 
   int _completeness(Product product) => [
-        product.name,
-        product.type,
-        product.subtype,
-        product.recipient,
-        product.familyOrActive,
-        product.need,
-        product.profile,
-        product.moment,
-      ].where((value) => value.trim().isNotEmpty).length;
+    product.name,
+    product.type,
+    product.recipient,
+    product.familyOrActive,
+    product.need,
+    product.profile,
+    product.moment,
+  ].where((value) => value.trim().isNotEmpty).length;
 
   int _roleRank(Product product) =>
       product.role.toLowerCase() == 'principal' ? 0 : 1;

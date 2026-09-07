@@ -26,7 +26,7 @@ class Product {
     id: json['id'] as String,
     category: json['category'] as String,
     type: json['type'] as String,
-    subtype: json['subtype'] as String,
+    subtype: json['subtype'] as String? ?? '',
     recipient: json['recipient'] as String,
     name: json['name'] as String,
     presentation: json['presentation'] as String,
@@ -40,7 +40,7 @@ class Product {
     eligible: json['eligible'] as bool,
     code: json['code'] as String,
     updated: json['updated'] as String,
-    role: json['role'] as String,
+    role: json['role'] as String? ?? '',
     isSuggestedKit: json['isSuggestedKit'] as bool? ?? false,
     imagePath: json['imagePath'] as String? ?? '',
   );

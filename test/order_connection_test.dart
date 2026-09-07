@@ -6,6 +6,7 @@ import 'package:oboticario_belleza_a_tu_medida/domain/models/attribution_context
 import 'package:oboticario_belleza_a_tu_medida/domain/models/customer_draft.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/order.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/order_selection.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/product.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/repositories/order_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/recommendation_engine.dart';
 import 'package:oboticario_belleza_a_tu_medida/services/local_analytics_service.dart';
@@ -37,6 +38,22 @@ void main() {
     );
     expect(controller.orderSubmissionConfigured, isFalse);
   });
+
+  test(
+    'availability intersection exposes all 252 eligible Cloud IDs',
+    () async {
+      final controller = await _controller(_FakeOrderRepository());
+      final localIds = (await const LocalCatalogRepository().loadProducts())
+          .map((product) => product.id)
+          .toSet();
+
+      expect(controller.products, hasLength(252));
+      expect(
+        controller.products.map((product) => product.id).toSet(),
+        localIds,
+      );
+    },
+  );
 
   test(
     'selected alternative and attribution reach the order repository',
@@ -98,7 +115,7 @@ void main() {
       final fake = _FakeOrderRepository();
       final controller = await _controller(fake);
       final primary = controller.products.firstWhere(
-        (item) => item.id == 'OB017',
+        (item) => item.id == 'OB019',
       );
       final candidate = controller.crossSellFor(primary).candidates.first;
       final selection = OrderSelection.fromPrimary(
@@ -124,7 +141,7 @@ void main() {
       final fake = _FakeWheelOrderRepository();
       final controller = await _controller(fake);
       final primary = controller.products.firstWhere(
-        (item) => item.id == 'OB017',
+        (item) => item.id == 'OB019',
       );
       final candidate = controller.crossSellFor(primary).candidates.first;
       final selection = OrderSelection.fromPrimary(
@@ -150,10 +167,10 @@ void main() {
       final fake = _FakeOrderRepository();
       final controller = await _controller(fake);
       final primary = controller.products.firstWhere(
-        (item) => item.id == 'OB017',
+        (item) => item.id == 'OB019',
       );
       final alternative = controller.products.firstWhere(
-        (item) => item.id == 'OB018',
+        (item) => item.id == 'OB020',
       );
       final candidate = controller.crossSellFor(primary).candidates.first;
       final selection = OrderSelection.fromPrimary(primary)
@@ -225,7 +242,7 @@ void main() {
   test(
     'server-unavailable product cannot be recommended or reach OrderDraft',
     () async {
-      final fake = _FakeOrderRepository(excludedProductIds: const {'OB064'});
+      final fake = _FakeOrderRepository(excludedProductIds: const {'OB063'});
       final controller = await _controller(fake);
       const engine = RecommendationEngine();
       final result = engine.recommend(
@@ -239,15 +256,14 @@ void main() {
           'cab_rutina': 'finalizacion',
         },
       );
-      expect(controller.products.any((item) => item.id == 'OB063'), isTrue);
-      expect(controller.products.any((item) => item.id == 'OB064'), isFalse);
-      expect(result.primary?.product.id, isNot('OB064'));
-      expect(result.alternative?.product.id, 'OB051');
+      expect(controller.products.any((item) => item.id == 'OB063'), isFalse);
+      expect(result.primary?.product.id, isNot('OB063'));
+      expect(result.alternative?.product.id, isNot('OB063'));
 
       final localProducts = await const LocalCatalogRepository().loadProducts();
       final selection = OrderSelection.fromPrimary(
-        localProducts.firstWhere((item) => item.id == 'OB063'),
-      )..addAlternative(localProducts.firstWhere((item) => item.id == 'OB064'));
+        localProducts.firstWhere((item) => item.id == 'OB049'),
+      )..addAlternative(localProducts.firstWhere((item) => item.id == 'OB063'));
       await expectLater(
         controller.createOrder(customer: _customer, selection: selection),
         throwsA(isA<OrderSubmissionUnavailable>()),
@@ -301,11 +317,16 @@ void main() {
           'reg_nivel': 'especial',
         },
       );
-      expect(result.hasMatch, isFalse);
+      expect(result.hasMatch, isTrue);
+      expect(result.primary!.product.isSuggestedKit, isFalse);
+      expect(result.alternative!.product.isSuggestedKit, isFalse);
 
       final localProducts = await const LocalCatalogRepository().loadProducts();
-      final kit04 = localProducts.firstWhere((item) => item.id == 'KIT04');
-      final selection = OrderSelection.fromPrimary(kit04);
+      final officialGift = localProducts.firstWhere(
+        (item) => item.category == 'regalos',
+      );
+      final suggestedKit = _asSuggestedKit(officialGift);
+      final selection = OrderSelection.fromPrimary(suggestedKit);
       await expectLater(
         controller.createOrder(customer: _customer, selection: selection),
         throwsA(isA<OrderSubmissionUnavailable>()),
@@ -313,7 +334,129 @@ void main() {
       expect(fake.draft, isNull);
     },
   );
+
+  test(
+    'immediate stock is loaded only after ranking without changing it',
+    () async {
+      final fake = _FakeOrderRepository(immediateStockCodes: const {'60138'});
+      final controller = await _controller(fake);
+      const answers = {
+        'perf_destinatario': 'mujer',
+        'perf_aroma': 'dulce',
+        'perf_ocasion': 'salida',
+        'perf_intensidad': 'intensa',
+      };
+      final pricesBefore = {
+        for (final product in controller.products)
+          product.code: product.priceCop,
+      };
+      final expected = const RecommendationEngine().recommend(
+        category: 'perfumeria',
+        products: controller.products,
+        questions: controller.questions,
+        answers: answers,
+      );
+
+      await _completePerfumeQuiz(controller, answers);
+
+      expect(
+        controller.result!.primary!.product.id,
+        expected.primary!.product.id,
+      );
+      expect(
+        controller.result!.alternative!.product.id,
+        expected.alternative!.product.id,
+      );
+      expect(controller.hasImmediateStock('60138'), isTrue);
+      expect(controller.hasImmediateStock('CODIGO-SIN-INVENTARIO'), isFalse);
+      expect(fake.requestedImmediateStockCodes, {
+        controller.result!.primary!.product.code,
+        controller.result!.alternative!.product.code,
+      });
+      expect({
+        for (final product in controller.products)
+          product.code: product.priceCop,
+      }, pricesBefore);
+    },
+  );
+
+  test('immediate stock RPC failure never blocks a recommendation', () async {
+    final fake = _FakeOrderRepository(immediateStockFailure: true);
+    final controller = await _controller(fake);
+
+    await _completePerfumeQuiz(controller, const {
+      'perf_destinatario': 'mujer',
+      'perf_aroma': 'dulce',
+      'perf_ocasion': 'salida',
+      'perf_intensidad': 'intensa',
+    });
+
+    expect(controller.result!.hasMatch, isTrue);
+    expect(controller.stage, AppStage.result);
+    expect(
+      controller.hasImmediateStock(controller.result!.primary!.product.code),
+      isFalse,
+    );
+  });
+
+  test('incomplete immediate stock data is handled as no label', () async {
+    final fake = _FakeOrderRepository(incompleteImmediateStockResponse: true);
+    final controller = await _controller(fake);
+
+    await _completePerfumeQuiz(controller, const {
+      'perf_destinatario': 'mujer',
+      'perf_aroma': 'dulce',
+      'perf_ocasion': 'salida',
+      'perf_intensidad': 'intensa',
+    });
+
+    expect(controller.result!.hasMatch, isTrue);
+    expect(controller.stage, AppStage.result);
+    expect(
+      controller.hasImmediateStock(controller.result!.primary!.product.code),
+      isFalse,
+    );
+  });
 }
+
+Future<void> _completePerfumeQuiz(
+  AppController controller,
+  Map<String, String> answers,
+) async {
+  controller.selectCategory('perfumeria');
+  for (final entry in answers.entries) {
+    expect(controller.currentQuestion!.id, entry.key);
+    controller.selectAnswer(
+      controller.currentQuestion!.options.firstWhere(
+        (option) => option.id == entry.value,
+      ),
+    );
+    await controller.continueQuestion();
+  }
+}
+
+Product _asSuggestedKit(Product product) => Product(
+  id: 'TEST-SUGGESTED-KIT',
+  category: product.category,
+  type: product.type,
+  subtype: product.subtype,
+  recipient: product.recipient,
+  name: product.name,
+  presentation: product.presentation,
+  priceCop: product.priceCop,
+  familyOrActive: product.familyOrActive,
+  intensity: product.intensity,
+  need: product.need,
+  profile: product.profile,
+  moment: product.moment,
+  available: true,
+  eligible: true,
+  code: 'TEST-SUGGESTED-KIT',
+  updated: product.updated,
+  role: product.role,
+  isSuggestedKit: true,
+  imagePath: product.imagePath,
+);
 
 const _customer = CustomerDraft(
   name: 'Cliente Prueba',
@@ -341,17 +484,27 @@ Future<AppController> _controller(_FakeOrderRepository repository) async {
 }
 
 class _FakeOrderRepository
-    implements OrderRepository, ProductAvailabilityRepository {
+    implements
+        OrderRepository,
+        ProductAvailabilityRepository,
+        ImmediateStockRepository {
   _FakeOrderRepository({
     this.excludedProductIds = const {},
     this.availabilityFailure = false,
     this.failNextSubmission = false,
+    this.immediateStockCodes = const {},
+    this.immediateStockFailure = false,
+    this.incompleteImmediateStockResponse = false,
   });
 
   final Set<String> excludedProductIds;
   bool availabilityFailure;
   int availabilityChecks = 0;
   bool failNextSubmission;
+  final Set<String> immediateStockCodes;
+  final bool immediateStockFailure;
+  final bool incompleteImmediateStockResponse;
+  Set<String>? requestedImmediateStockCodes;
   OrderDraft? draft;
   final List<String> journeyIds = [];
 
@@ -370,6 +523,16 @@ class _FakeOrderRepository
         )
         .map((product) => product.id)
         .toSet();
+  }
+
+  @override
+  Future<Set<String>> loadImmediateStockCodes(Set<String> codes) async {
+    requestedImmediateStockCodes = codes;
+    if (immediateStockFailure) throw StateError('immediate stock unavailable');
+    if (incompleteImmediateStockResponse) {
+      throw const FormatException('Respuesta incompleta de inventario físico.');
+    }
+    return codes.intersection(immediateStockCodes);
   }
 
   @override
@@ -398,7 +561,6 @@ class _FakeWheelOrderRepository extends _FakeOrderRepository
       const WheelCampaignStatus(active: true);
 
   @override
-
   Future<WheelBenefit> spinWheel({
     required String journeyId,
     required CustomerDraft customer,

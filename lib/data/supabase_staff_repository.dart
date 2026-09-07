@@ -31,6 +31,34 @@ class SupabaseStaffRepository implements StaffRepository {
     return profile;
   }
 
+
+  @override
+    Future<StaffProfile> signInWithGoogle() async {
+      final authEvent = _client.auth.onAuthStateChange.firstWhere(
+        (data) =>
+            data.event == AuthChangeEvent.signedIn &&
+            data.session != null,
+      );
+
+      await _client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'io.supabase.oboticario://login-callback',
+      );
+
+      await authEvent;
+
+      final profile = await loadCurrentProfile();
+
+      if (profile == null) {
+        await _client.auth.signOut();
+        throw const AuthException(
+          'Este usuario no tiene un perfil autorizado.',
+        );
+      }
+
+      return profile;
+    }
+
   @override
   Future<void> signOut() => _client.auth.signOut();
 

@@ -61,6 +61,7 @@ class AppController extends ChangeNotifier {
   bool wheelCampaignActive = false;
   bool availabilityVerified = false;
   String? availabilityError;
+  Set<String> _immediateStockCodes = const {};
   bool _availabilityRetryInProgress = false;
 
   Future<void> initialize() async {
@@ -191,6 +192,7 @@ class AppController extends ChangeNotifier {
     questionIndex = 0;
     answers.clear();
     result = null;
+    _immediateStockCodes = const {};
     stage = AppStage.questionnaire;
     notifyListeners();
   }
@@ -223,6 +225,8 @@ class AppController extends ChangeNotifier {
     );
     stage = AppStage.result;
     notifyListeners();
+    await _syncImmediateStockForResult();
+    notifyListeners();
     await _analytics.recordQuizCompleted(
       selectedCategory!,
       result?.primary?.product.id,
@@ -233,6 +237,8 @@ class AppController extends ChangeNotifier {
     selectAnswer(option);
     await continueQuestion();
   }
+
+  bool hasImmediateStock(String code) => _immediateStockCodes.contains(code);
 
   void back() {
     if (stage == AppStage.questionnaire && questionIndex > 0) {
@@ -251,6 +257,7 @@ class AppController extends ChangeNotifier {
     questionIndex = 0;
     answers.clear();
     result = null;
+    _immediateStockCodes = const {};
     stage = AppStage.categories;
     notifyListeners();
   }
@@ -261,6 +268,7 @@ class AppController extends ChangeNotifier {
     questionIndex = 0;
     answers.clear();
     result = null;
+    _immediateStockCodes = const {};
     error = null;
     stage = AppStage.welcome;
     notifyListeners();
@@ -432,6 +440,28 @@ class AppController extends ChangeNotifier {
           'Puedes intentar nuevamente o pedir asesoría.';
       notifyListeners();
       return false;
+    }
+  }
+
+  Future<void> _syncImmediateStockForResult() async {
+    _immediateStockCodes = const {};
+    final repository = _orderRepository;
+    final currentResult = result;
+    if (repository is! ImmediateStockRepository ||
+        currentResult == null ||
+        !currentResult.hasMatch) {
+      return;
+    }
+    final codes = {
+      currentResult.primary!.product.code,
+      if (currentResult.alternative != null)
+        currentResult.alternative!.product.code,
+    };
+    try {
+      _immediateStockCodes = await (repository as ImmediateStockRepository)
+          .loadImmediateStockCodes(codes);
+    } catch (_) {
+      _immediateStockCodes = const {};
     }
   }
 

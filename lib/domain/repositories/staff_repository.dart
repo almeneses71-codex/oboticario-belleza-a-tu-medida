@@ -44,6 +44,7 @@ abstract interface class StaffRepository {
     required String email,
     required String password,
   });
+  Future<StaffProfile> signInWithGoogle();
   Future<void> signOut();
   Future<StaffProfile?> loadCurrentProfile();
   Future<StaffOrderPage> loadOrders({StaffOrderFilter filter});

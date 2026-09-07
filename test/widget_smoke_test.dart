@@ -1,26 +1,52 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/cross_sell_relation.dart';
 import 'package:oboticario_belleza_a_tu_medida/services/local_analytics_service.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/product.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/question.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/repositories/catalog_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/repositories/cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/order.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/repositories/order_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/repositories/staff_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late _CachedCatalogRepository catalogRepository;
+  late _CachedCrossSellRepository crossSellRepository;
+  late Set<String> availableIds;
+
+  setUpAll(() async {
+    final localCatalog = const LocalCatalogRepository();
+    final products = await localCatalog.loadProducts();
+    catalogRepository = _CachedCatalogRepository(
+      products,
+      await localCatalog.loadQuestions(),
+    );
+    crossSellRepository = _CachedCrossSellRepository(
+      await const LocalCrossSellRepository().loadRelations(),
+    );
+    availableIds = products.map((product) => product.id).toSet();
+  });
+
   testWidgets('welcome opens the five category selector', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(
       BeautyAdvisorApp(
-        repository: const LocalCatalogRepository(),
-        crossSellRepository: const LocalCrossSellRepository(),
-        orderRepository: _AvailabilityOnlyRepository(),
+        repository: catalogRepository,
+        crossSellRepository: crossSellRepository,
+        orderRepository: _AvailabilityOnlyRepository(availableIds),
         analytics: LocalAnalyticsService(),
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Belleza a tu medida'), findsOneWidget);
+    expect(find.text('Regala belleza, regala emociones'), findsOneWidget);
     expect(find.text('Te acompaña Dario y Ana'), findsOneWidget);
     expect(find.text('Comenzar mi diagnóstico'), findsOneWidget);
     await tester.ensureVisible(find.text('Comenzar mi diagnóstico'));
@@ -47,18 +73,89 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pregunta 2 de 5'), findsOneWidget);
   });
+
+  for (final configured in [true, false]) {
+    testWidgets('administrative access initially visible: cloud=$configured', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        BeautyAdvisorApp(
+          repository: catalogRepository,
+          crossSellRepository: crossSellRepository,
+          orderRepository: _AvailabilityOnlyRepository(availableIds),
+          analytics: LocalAnalyticsService(),
+          staffRepository: configured ? _SignedOutStaffRepository() : null,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final access = find.byKey(const Key('temporary-staff-access'));
+      expect(access, findsOneWidget);
+      expect(access.hitTestable(), findsOneWidget);
+      final bounds = tester.getRect(access);
+      expect(bounds.top, greaterThanOrEqualTo(0));
+      expect(bounds.bottom, lessThanOrEqualTo(640));
+      expect(bounds.left, greaterThanOrEqualTo(0));
+      expect(bounds.right, lessThanOrEqualTo(360));
+      await tester.tap(access);
+      await tester.pumpAndSettle();
+      expect(find.text('Gestión de pedidos'), findsOneWidget);
+      expect(
+        find.text('El entorno de pedidos no está configurado.'),
+        configured ? findsNothing : findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+}
+
+class _SignedOutStaffRepository implements StaffRepository {
+  @override
+  bool get hasSession => false;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CachedCatalogRepository implements CatalogRepository {
+  const _CachedCatalogRepository(this.products, this.questions);
+
+  final List<Product> products;
+  final List<Question> questions;
+
+  @override
+  Future<List<Product>> loadProducts() async => products;
+
+  @override
+  Future<List<Question>> loadQuestions() async => questions;
+}
+
+class _CachedCrossSellRepository implements CrossSellRepository {
+  const _CachedCrossSellRepository(this.relations);
+
+  final List<CrossSellRelation> relations;
+
+  @override
+  Future<List<CrossSellRelation>> loadRelations() async => relations;
 }
 
 class _AvailabilityOnlyRepository
     implements OrderRepository, ProductAvailabilityRepository {
+  const _AvailabilityOnlyRepository(this.availableIds);
+
+  final Set<String> availableIds;
+
   @override
   bool get isConfigured => false;
 
   @override
-  Future<Set<String>> loadPurchasableProductIds() async =>
-      (await const LocalCatalogRepository().loadProducts())
-          .map((product) => product.id)
-          .toSet();
+  Future<Set<String>> loadPurchasableProductIds() async => availableIds;
 
   @override
   Future<CreatedOrder> createOrder(OrderDraft draft) =>

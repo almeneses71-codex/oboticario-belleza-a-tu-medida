@@ -52,8 +52,8 @@ void main() {
     await tester.ensureVisible(productAction);
     await tester.tap(productAction);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Continuar con mi elección'));
-    await tester.tap(find.text('Continuar con mi elección'));
+    await tester.ensureVisible(find.text('Continuar con mi selección'));
+    await tester.tap(find.text('Continuar con mi selección'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(TextFormField, 'Nombre'),

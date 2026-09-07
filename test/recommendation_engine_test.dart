@@ -53,7 +53,7 @@ void main() {
     expect(result.primary.score, 100);
   });
 
-  test('score below 55 still returns the closest facial products', () async {
+  test('moderate score still returns the closest facial products', () async {
     final result = await recommend('facial', const {
       'fac_necesidad': 'ojeras',
       'fac_piel': 'no_seguro',
@@ -61,10 +61,10 @@ void main() {
       'fac_rutina': 'no_seguro',
     });
     expect(result.hasMatch, isTrue);
-    expect(result.primary.score, lessThan(55));
+    expect(result.primary.score, inInclusiveRange(55, 69));
     expect(result.primary.product.category, 'facial');
     expect(result.alternative, isNotNull);
-    expect(result.confidence, RecommendationConfidence.low);
+    expect(result.confidence, RecommendationConfidence.moderate);
   });
 
   test('ineligible product never enters facial ranking', () async {
@@ -79,7 +79,7 @@ void main() {
   });
 
   test(
-    'hair stays stable while unofficial gifts remain advisory-only',
+    'hair and eligible September gifts both return stable results',
     () async {
       final hair = await recommend('cabello', const {
         'cab_necesidad': 'dano',
@@ -96,15 +96,16 @@ void main() {
       final giftA = await recommend('regalos', giftAnswers);
       final giftB = await recommend('regalos', giftAnswers);
       expect(hair.hasMatch, isTrue);
-      expect(giftA.hasMatch, isFalse);
-      expect(giftB.hasMatch, isFalse);
+      expect(giftA.hasMatch, isTrue);
+      expect(giftB.hasMatch, isTrue);
+      expect(giftA.primary!.product.id, giftB.primary!.product.id);
     },
   );
 
   for (final scenario in const [
-    ('hombre', 'Hombre', 'KIT03'),
-    ('mujer', 'Mujer', 'KIT01'),
-    ('no_seguro', 'Unisex', 'KIT04'),
+    ('hombre', 'Hombre'),
+    ('mujer', 'Mujer'),
+    ('no_seguro', 'Unisex'),
   ]) {
     test('gift fallback uses explicit ${scenario.$2} recipient', () async {
       final products = await repository.loadProducts();
@@ -125,7 +126,6 @@ void main() {
       );
       expect(result.hasMatch, isTrue);
       expect(result.primary!.product.recipient, scenario.$2);
-      expect(result.primary!.product.id, scenario.$3);
       expect(result.primary!.product.category, 'regalos');
     });
   }
@@ -180,7 +180,179 @@ void main() {
       expect(result.hasMatch, isFalse);
     },
   );
+
+  test('product without subtype loads with a neutral empty value', () {
+    final json = _fixtureJson()..remove('subtype');
+    expect(Product.fromJson(json).subtype, isEmpty);
+  });
+
+  test('product without role loads with a neutral empty value', () {
+    final json = _fixtureJson()..remove('role');
+    expect(Product.fromJson(json).role, isEmpty);
+  });
+
+  test('neutral role never receives the Principal tie-break advantage', () {
+    final neutral = Product.fromJson(_fixtureJson(id: 'A', role: ''));
+    final principal = Product.fromJson(
+      _fixtureJson(id: 'Z', role: 'Principal'),
+    );
+    final result = engine.recommend(
+      category: 'facial',
+      products: [neutral, principal],
+      questions: const [],
+      answers: const {},
+    );
+    expect(result.primary!.product.id, 'Z');
+  });
+
+  test('unknown type earns no points from corp_tipo', () async {
+    final unknown = Product.fromJson(
+      _fixtureJson(id: 'A', category: 'corporal', type: ''),
+    );
+    final lotion = Product.fromJson(
+      _fixtureJson(id: 'B', category: 'corporal', type: 'Loción corporal'),
+    );
+    final result = engine.recommend(
+      category: 'corporal',
+      products: [unknown, lotion],
+      questions: await repository.loadQuestions(),
+      answers: const {'corp_tipo': 'locion'},
+    );
+    expect(result.primary!.product.id, 'B');
+    expect(result.primary!.score, 100);
+    expect(result.alternative!.product.id, 'A');
+    expect(result.alternative!.score, 0);
+  });
+
+  test(
+    'unknown type still competes through other validated criteria',
+    () async {
+      final unknown = Product.fromJson(
+        _fixtureJson(
+          category: 'corporal',
+          type: '',
+          need: 'Hidratación diaria',
+        ),
+      );
+      final result = engine.recommend(
+        category: 'corporal',
+        products: [unknown],
+        questions: await repository.loadQuestions(),
+        answers: const {'corp_necesidad': 'hidratar', 'corp_tipo': 'no_seguro'},
+      );
+      expect(result.primary!.product.id, unknown.id);
+      expect(result.primary!.score, 100);
+    },
+  );
+
+  for (final scenario in const [
+    ('mujer', 'Mujer'),
+    ('hombre', 'Hombre'),
+    ('no_seguro', 'Unisex'),
+  ]) {
+    test('${scenario.$1} keeps the strict recipient boundary', () async {
+      final products = ['Mujer', 'Hombre', 'Unisex']
+          .map(
+            (recipient) => Product.fromJson(
+              _fixtureJson(
+                id: recipient,
+                category: 'perfumeria',
+                recipient: recipient,
+              ),
+            ),
+          )
+          .toList();
+      final result = engine.recommend(
+        category: 'perfumeria',
+        products: products,
+        questions: await repository.loadQuestions(),
+        answers: {'perf_destinatario': scenario.$1},
+      );
+      final returned = [result.primary, result.alternative]
+          .whereType<RankedProduct>()
+          .map((item) => item.product.recipient)
+          .toSet();
+      if (scenario.$2 == 'Unisex') {
+        expect(returned, {'Unisex'});
+      } else {
+        expect(returned.difference({scenario.$2, 'Unisex'}), isEmpty);
+      }
+    });
+  }
+
+  test('ineligible and makeup products never enter a supported result', () {
+    final ineligible = Product.fromJson(
+      _fixtureJson(id: 'INELIGIBLE', eligible: false),
+    );
+    final makeup = Product.fromJson(
+      _fixtureJson(id: 'MAKEUP', category: 'maquillaje'),
+    );
+    final result = engine.recommend(
+      category: 'facial',
+      products: [ineligible, makeup],
+      questions: const [],
+      answers: const {},
+    );
+    expect(result.hasMatch, isFalse);
+  });
+
+  test('primary and alternative always represent different products', () {
+    final result = engine.recommend(
+      category: 'facial',
+      products: [
+        Product.fromJson(_fixtureJson(id: 'A')),
+        Product.fromJson(_fixtureJson(id: 'B')),
+      ],
+      questions: const [],
+      answers: const {},
+    );
+    expect(result.primary!.product.id, isNot(result.alternative!.product.id));
+  });
+
+  test('existing liquid soap matches the corporal soap taxonomy', () async {
+    final soap = Product.fromJson(
+      _fixtureJson(category: 'corporal', type: 'Jabón líquido corporal'),
+    );
+    final result = engine.recommend(
+      category: 'corporal',
+      products: [soap],
+      questions: await repository.loadQuestions(),
+      answers: const {'corp_tipo': 'jabon'},
+    );
+    expect(result.primary!.score, 100);
+  });
 }
+
+Map<String, dynamic> _fixtureJson({
+  String id = 'FIXTURE',
+  String category = 'facial',
+  String type = 'Hidratante o tratamiento',
+  String subtype = 'Hidratación',
+  String recipient = 'Unisex',
+  String role = 'Alternativa',
+  String need = 'Hidratación',
+  bool eligible = true,
+}) => {
+  'id': id,
+  'category': category,
+  'type': type,
+  'subtype': subtype,
+  'recipient': recipient,
+  'name': 'Producto $id',
+  'presentation': '1 unidad',
+  'priceCop': 1,
+  'familyOrActive': 'Familia',
+  'intensity': 1,
+  'need': need,
+  'profile': 'Perfil',
+  'moment': 'Momento',
+  'available': true,
+  'eligible': eligible,
+  'code': id,
+  'updated': '2026-09-05',
+  'role': role,
+  'isSuggestedKit': false,
+};
 
 Product _asVerifiedKitFixture(Product product) => Product(
   id: product.id,

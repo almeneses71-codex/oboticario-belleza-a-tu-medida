@@ -4,12 +4,35 @@ import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/customer_draft.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/cross_sell_relation.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/order.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/product.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/question.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/repositories/catalog_repository.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/repositories/cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/repositories/order_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/services/local_analytics_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late _CachedCatalogRepository catalogRepository;
+  late _CachedCrossSellRepository crossSellRepository;
+  late Set<String> availableIds;
+
+  setUpAll(() async {
+    final localCatalog = const LocalCatalogRepository();
+    final products = await localCatalog.loadProducts();
+    catalogRepository = _CachedCatalogRepository(
+      products,
+      await localCatalog.loadQuestions(),
+    );
+    crossSellRepository = _CachedCrossSellRepository(
+      await const LocalCrossSellRepository().loadRelations(),
+    );
+    availableIds = products.map((product) => product.id).toSet();
+  });
+
   testWidgets(
     'summary shows three products and active wheel on small screens',
     (tester) async {
@@ -19,11 +42,11 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       SharedPreferences.setMockInitialValues({});
-      final repository = _FakeWheelOrderRepository();
+      final repository = _FakeWheelOrderRepository(availableIds);
       await tester.pumpWidget(
         BeautyAdvisorApp(
-          repository: const LocalCatalogRepository(),
-          crossSellRepository: const LocalCrossSellRepository(),
+          repository: catalogRepository,
+          crossSellRepository: crossSellRepository,
           orderRepository: repository,
           analytics: LocalAnalyticsService(),
         ),
@@ -56,7 +79,11 @@ void main() {
         await tester.ensureVisible(productAction.first);
         await tester.tap(productAction.first);
         await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.text('¿Cómo quieres recibir tu pedido?'), findsNothing);
+        
       }
+  
       final complement = find.widgetWithText(
         OutlinedButton,
         'Agregar complemento',
@@ -65,8 +92,23 @@ void main() {
       await tester.ensureVisible(complement.first);
       await tester.tap(complement.first);
       await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('¿Cómo quieres recibir tu pedido?'), findsNothing);
 
-      await _tapVisible(tester, 'Continuar con mi elección');
+      
+      await _tapVisible(tester, 'Continuar con mi selección');
+
+      final continueToDelivery =
+          find.byKey(const Key('continue-to-delivery'));
+      expect(continueToDelivery, findsOneWidget);
+      await tester.tap(continueToDelivery);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RadioListTile<bool>), findsNWidgets(2));
+      await tester.ensureVisible(find.text('Acordar entrega con asesor'));
+      await tester.tap(find.text('Acordar entrega con asesor'));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Nombre'),
         'Ana Cliente',
@@ -75,6 +117,7 @@ void main() {
         find.widgetWithText(TextFormField, 'Número de WhatsApp'),
         '573001234567',
       );
+      await tester.ensureVisible(find.byType(Checkbox));
       await tester.tap(find.byType(Checkbox));
       await _tapVisible(tester, 'Revisar mi solicitud');
 
@@ -94,7 +137,10 @@ void main() {
       expect(find.byKey(const Key('wheel-spin-available')), findsOneWidget);
       final spinButton = find.byKey(const Key('wheel-spin-button'));
       expect(tester.getCenter(spinButton).dy, lessThan(568));
-      await _tapVisible(tester, 'Acordar entrega con asesor');
+      expect(find.byType(RadioListTile<bool>), findsNothing);
+      expect(find.text('¿Cómo quieres recibir tu pedido?'), findsNothing);
+      expect(find.text('Tipo de envío'), findsOneWidget);
+      expect(find.text('Acordar entrega con asesor'), findsOneWidget);
       await tester.ensureVisible(find.text('Girar la ruleta'));
       await tester.tap(find.text('Girar la ruleta'));
       await tester.pump();
@@ -150,23 +196,22 @@ Future<void> _tapVisible(WidgetTester tester, String label) async {
 
 class _FakeWheelOrderRepository
     implements OrderRepository, ProductAvailabilityRepository, WheelRepository {
+  _FakeWheelOrderRepository(this.availableIds);
+
+  final Set<String> availableIds;
   int spinCalls = 0;
 
   @override
   bool get isConfigured => true;
 
   @override
-  Future<Set<String>> loadPurchasableProductIds() async =>
-      (await const LocalCatalogRepository().loadProducts())
-          .map((product) => product.id)
-          .toSet();
+  Future<Set<String>> loadPurchasableProductIds() async => availableIds;
 
   @override
   Future<WheelCampaignStatus> loadWheelCampaignStatus() async =>
       const WheelCampaignStatus(active: true);
 
   @override
-
   Future<WheelBenefit> spinWheel({
     required String journeyId,
     required CustomerDraft customer,
@@ -196,4 +241,26 @@ class _FakeWheelOrderRepository
         number: 'OBM-TEST-0001',
         status: OrderStatus.requested,
       );
+}
+
+class _CachedCatalogRepository implements CatalogRepository {
+  const _CachedCatalogRepository(this.products, this.questions);
+
+  final List<Product> products;
+  final List<Question> questions;
+
+  @override
+  Future<List<Product>> loadProducts() async => products;
+
+  @override
+  Future<List<Question>> loadQuestions() async => questions;
+}
+
+class _CachedCrossSellRepository implements CrossSellRepository {
+  const _CachedCrossSellRepository(this.relations);
+
+  final List<CrossSellRelation> relations;
+
+  @override
+  Future<List<CrossSellRelation>> loadRelations() async => relations;
 }
