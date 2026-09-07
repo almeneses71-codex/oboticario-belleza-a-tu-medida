@@ -155,11 +155,20 @@ void main() {
   }
 
   test('real Xiaomi hair answers always stay inside hair category', () async {
-    final result = await recommend('cabello', const {
+    final questions = await repository.loadQuestions();
+    final routine = questions.firstWhere((item) => item.id == 'cab_rutina');
+    final finish = routine.options.firstWhere(
+      (item) => item.id == 'finalizacion',
+    );
+    expect(routine.text, '¿Qué paso quieres incorporar?');
+    expect(finish.label, 'Producto para finalizar (leave-in)');
+    expect(finish.boosts.single.queries, ['finalizador', 'leave-in']);
+
+    final result = await recommend('cabello', {
       'cab_necesidad': 'nutricion',
       'cab_tipo': 'rubio',
       'cab_secundaria': 'crecimiento',
-      'cab_rutina': 'finalizacion',
+      'cab_rutina': finish.id,
     });
     expect(result.hasMatch, isTrue);
     expect(result.primary.product.id, 'OB063');

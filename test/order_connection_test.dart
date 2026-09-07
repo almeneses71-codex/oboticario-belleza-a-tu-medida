@@ -55,6 +55,25 @@ void main() {
     },
   );
 
+  test('hair finish label keeps the finalizacion answer ID', () async {
+    final controller = await _controller(_FakeOrderRepository());
+    controller.selectCategory('cabello');
+    while (controller.currentQuestion!.id != 'cab_rutina') {
+      final option = controller.currentQuestionOptions.firstWhere(
+        (item) => item.id == 'no_seguro',
+      );
+      controller.selectAnswer(option);
+      await controller.continueQuestion();
+    }
+    final finish = controller.currentQuestionOptions.firstWhere(
+      (item) => item.id == 'finalizacion',
+    );
+
+    expect(finish.label, 'Producto para finalizar (leave-in)');
+    controller.selectAnswer(finish);
+    expect(controller.answers['cab_rutina'], 'finalizacion');
+  });
+
   test(
     'selected alternative and attribution reach the order repository',
     () async {

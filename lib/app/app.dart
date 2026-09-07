@@ -1020,7 +1020,7 @@ class _ProductCard extends StatelessWidget {
             Text(
               AppConfig.priceIsCurrent
                   ? 'Precio de referencia · Ciclo 08, agosto de 2026'
-                  : 'Catálogo vencido · Consulta precio vigente',
+                  : 'Precio sujeto a confirmación',
             ),
             Text('Disponibilidad revisada: ${product.updated}'),
             if (immediateDelivery) ...[

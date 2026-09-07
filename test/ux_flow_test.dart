@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
+import 'package:oboticario_belleza_a_tu_medida/app/app_config.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/cross_sell_relation.dart';
@@ -49,6 +50,9 @@ void main() {
       catalogRepository,
       crossSellRepository,
     );
+    expect(AppConfig.priceIsCurrent, isFalse);
+    expect(find.textContaining('Catálogo vencido'), findsNothing);
+    expect(find.text('Precio sujeto a confirmación'), findsWidgets);
     expect(find.text('Entrega inmediata'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('immediate-delivery-60138')),
