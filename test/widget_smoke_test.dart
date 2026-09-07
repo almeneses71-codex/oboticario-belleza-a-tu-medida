@@ -75,7 +75,7 @@ void main() {
   });
 
   for (final configured in [true, false]) {
-    testWidgets('administrative access initially visible: cloud=$configured', (tester) async {
+    testWidgets('administrative access stays at bottom: cloud=$configured', (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -95,8 +95,9 @@ void main() {
       expect(access, findsOneWidget);
       expect(access.hitTestable(), findsOneWidget);
       final bounds = tester.getRect(access);
-      expect(bounds.top, greaterThanOrEqualTo(0));
+      expect(bounds.top, greaterThan(640 / 2));
       expect(bounds.bottom, lessThanOrEqualTo(640));
+      expect(bounds.bottom, greaterThan(640 - 100));
       expect(bounds.left, greaterThanOrEqualTo(0));
       expect(bounds.right, lessThanOrEqualTo(360));
       await tester.tap(access);

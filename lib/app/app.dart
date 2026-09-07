@@ -227,42 +227,15 @@ class _WelcomeScreen extends StatelessWidget {
   final StaffRepository? staffRepository;
 
   @override
-  Widget build(BuildContext context) => _VisualBackground(
-    prominent: true,
-    child: _PageFrame(
-      child: Column(
+  Widget build(BuildContext context) => Stack(
+    children: [
+      _VisualBackground(
+        prominent: true,
+        child: _PageFrame(
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 220,
-            child: Align(
-                alignment: Alignment.topRight,
-                child: IconButton(
-                  key: const Key('temporary-staff-access'),
-                  tooltip: 'Gestión de pedidos',
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppTheme.green,
-                    minimumSize: const Size(52, 52),
-                    side: const BorderSide(
-                      color: AppTheme.green,
-                      width: 2,
-                    ),
-                    elevation: 4,
-                    shadowColor: Colors.black26,
-                  ),
-                  icon: const Icon(
-                    Icons.admin_panel_settings,
-                    size: 30,
-                  ),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => StaffApp(repository: staffRepository),
-                    ),
-                  ),
-                ),
-              ),
-          ),
+          const SizedBox(height: 220),
           Card(
             color: const Color(0xF7FFFBF4),
             child: Padding(
@@ -329,8 +302,36 @@ class _WelcomeScreen extends StatelessWidget {
 
         ], 
         
+          ),
+        ),
       ),
-    ),
+      Positioned(
+        right: 18,
+        bottom: 18,
+        child: SafeArea(
+          top: false,
+          left: false,
+          child: IconButton(
+            key: const Key('temporary-staff-access'),
+            tooltip: 'Gestión de pedidos',
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppTheme.green,
+              minimumSize: const Size(52, 52),
+              side: const BorderSide(color: AppTheme.green, width: 2),
+              elevation: 4,
+              shadowColor: Colors.black26,
+            ),
+            icon: const Icon(Icons.admin_panel_settings, size: 30),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StaffApp(repository: staffRepository),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
   );
 }
 
