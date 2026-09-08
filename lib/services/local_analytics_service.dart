@@ -35,6 +35,15 @@ class LocalAnalyticsService implements AnalyticsService {
   Future<void> recordWhatsappClick(String? productId) => _increment(_whatsapp);
 
   @override
+  Future<void> recordFunnelEvent({
+    required String eventType,
+    required String journeyId,
+    required AttributionContext attribution,
+    String? productId,
+    String? productCode,
+  }) async {}
+
+  @override
   Future<void> recordCrossSellShown({
     required String journeyId,
     required String primaryProductId,

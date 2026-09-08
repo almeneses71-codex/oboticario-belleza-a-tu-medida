@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -65,6 +66,7 @@ class AppController extends ChangeNotifier {
   bool _availabilityRetryInProgress = false;
 
   Future<void> initialize() async {
+    _recordFunnelEvent('app_open');
     try {
       _localProducts = await _repository.loadProducts();
       products = _localProducts;
@@ -183,6 +185,7 @@ class AppController extends ChangeNotifier {
   }
 
   void begin() {
+    _recordFunnelEvent('diagnosis_started');
     stage = AppStage.categories;
     notifyListeners();
   }
@@ -225,6 +228,13 @@ class AppController extends ChangeNotifier {
     );
     stage = AppStage.result;
     notifyListeners();
+    final recommended = result?.primary?.product;
+    _recordFunnelEvent('diagnosis_completed');
+    _recordFunnelEvent(
+      'recommendation_viewed',
+      productId: recommended?.id,
+      productCode: recommended?.code,
+    );
     await _syncImmediateStockForResult();
     notifyListeners();
     await _analytics.recordQuizCompleted(
@@ -288,6 +298,36 @@ class AppController extends ChangeNotifier {
 
   Future<void> recordWhatsappClick(String? productId) =>
       _analytics.recordWhatsappClick(productId);
+
+  void recordProductSelected(Product product) => _recordFunnelEvent(
+    'product_selected',
+    productId: product.id,
+    productCode: product.code,
+  );
+
+  void recordRequestStarted(OrderItemDraft primary) => _recordFunnelEvent(
+    'request_started',
+    productId: primary.productId,
+    productCode: primary.productCode,
+  );
+
+  void _recordFunnelEvent(
+    String eventType, {
+    String? productId,
+    String? productCode,
+  }) {
+    unawaited(
+      _analytics
+          .recordFunnelEvent(
+            eventType: eventType,
+            journeyId: journeyId,
+            attribution: attribution,
+            productId: productId,
+            productCode: productCode,
+          )
+          .catchError((_) {}),
+    );
+  }
 
   bool get orderSubmissionConfigured => _orderRepository?.isConfigured == true;
 

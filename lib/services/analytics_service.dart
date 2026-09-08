@@ -4,6 +4,13 @@ abstract interface class AnalyticsService {
   Future<void> recordAppOpen();
   Future<void> recordQuizCompleted(String category, String? productId);
   Future<void> recordWhatsappClick(String? productId);
+  Future<void> recordFunnelEvent({
+    required String eventType,
+    required String journeyId,
+    required AttributionContext attribution,
+    String? productId,
+    String? productCode,
+  });
   Future<void> recordCrossSellShown({
     required String journeyId,
     required String primaryProductId,

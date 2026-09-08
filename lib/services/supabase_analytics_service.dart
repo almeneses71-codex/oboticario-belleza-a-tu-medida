@@ -24,6 +24,32 @@ class SupabaseAnalyticsService implements AnalyticsService {
       _local.recordWhatsappClick(productId);
 
   @override
+  Future<void> recordFunnelEvent({
+    required String eventType,
+    required String journeyId,
+    required AttributionContext attribution,
+    String? productId,
+    String? productCode,
+  }) async {
+    try {
+      await _client.rpc(
+        'record_pilot_funnel_event',
+        params: {
+          'payload': {
+            'eventType': eventType,
+            'journeyId': journeyId,
+            'attribution': attribution.toJson(),
+            'productId': ?productId,
+            'productCode': ?productCode,
+          },
+        },
+      );
+    } catch (_) {
+      // Funnel analytics must never interrupt the customer journey.
+    }
+  }
+
+  @override
   Future<void> recordCrossSellShown({
     required String journeyId,
     required String primaryProductId,

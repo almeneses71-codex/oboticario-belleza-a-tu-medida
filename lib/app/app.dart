@@ -745,7 +745,7 @@ class _ResultScreenState extends State<_ResultScreen> {
       orderSelection?.items.any((item) => item.productId == product.id) == true;
 
   void _toggleProduct(Product product) {
-    
+    final wasSelected = _isSelected(product);
     final result = controller.result!;
     final recommendedPrimary = result.primary!.product;
     final recommendedAlternative = result.alternative?.product;
@@ -786,6 +786,10 @@ class _ResultScreenState extends State<_ResultScreen> {
       crossSell = nextCrossSell;
     });
 
+    if (!wasSelected && _isSelected(product)) {
+      controller.recordProductSelected(product);
+    }
+
     for (final candidate in nextCrossSell.candidates) {
       controller.recordCrossSellShown(candidate);
     }
@@ -816,6 +820,7 @@ class _ResultScreenState extends State<_ResultScreen> {
       ),
     );
     if (proceed == true && mounted && orderSelection != null) {
+      controller.recordRequestStarted(orderSelection!.primary);
       await _showRequest(context, orderSelection!);
     }
   }
