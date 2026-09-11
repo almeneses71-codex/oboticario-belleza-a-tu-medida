@@ -1,7 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app/staff_auth_restore.dart';
 import '../domain/models/staff_order.dart';
 import '../domain/repositories/staff_repository.dart';
+
+const staffNativeOAuthCallback =
+    'io.supabase.oboticario://login-callback';
+
+String resolveStaffOAuthRedirect({
+  required bool web,
+  required Uri currentUri,
+}) => web ? currentUri.resolve('/').toString() : staffNativeOAuthCallback;
 
 class SupabaseStaffRepository implements StaffRepository {
   const SupabaseStaffRepository(this._client);
@@ -31,33 +41,50 @@ class SupabaseStaffRepository implements StaffRepository {
     return profile;
   }
 
-
   @override
-    Future<StaffProfile> signInWithGoogle() async {
-      final authEvent = _client.auth.onAuthStateChange.firstWhere(
-        (data) =>
-            data.event == AuthChangeEvent.signedIn &&
-            data.session != null,
-      );
+  Future<StaffProfile> signInWithGoogle() async {
+    final sessionFuture = waitForCurrentOrAuthEvent<Session>(
+      currentValue: () => _client.auth.currentSession,
+      events: _client.auth.onAuthStateChange
+          .where(
+            (data) =>
+                data.event == AuthChangeEvent.signedIn ||
+                data.event == AuthChangeEvent.initialSession ||
+                data.event == AuthChangeEvent.tokenRefreshed,
+          )
+          .map((data) => data.session),
+    );
 
-      await _client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: 'io.supabase.oboticario://login-callback',
-      );
-
-      await authEvent;
-
-      final profile = await loadCurrentProfile();
-
-      if (profile == null) {
-        await _client.auth.signOut();
-        throw const AuthException(
-          'Este usuario no tiene un perfil autorizado.',
-        );
-      }
-
-      return profile;
+    final launched = await _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: resolveStaffOAuthRedirect(
+        web: kIsWeb,
+        currentUri: Uri.base,
+      ),
+    );
+    if (!launched) {
+      throw const AuthException('No fue posible abrir el acceso con Google.');
     }
+
+    final session = await sessionFuture;
+    if (session == null && _client.auth.currentSession == null) {
+      throw const AuthException(
+        'La sesión de Google no pudo restaurarse a tiempo.',
+      );
+    }
+
+    final profile = await loadCurrentProfile().timeout(
+      const Duration(seconds: 6),
+      onTimeout: () => null,
+    );
+
+    if (profile == null) {
+      await _client.auth.signOut();
+      throw const AuthException('Este usuario no tiene un perfil autorizado.');
+    }
+
+    return profile;
+  }
 
   @override
   Future<void> signOut() => _client.auth.signOut();
@@ -73,10 +100,7 @@ class SupabaseStaffRepository implements StaffRepository {
         .maybeSingle();
     if (row == null) return null;
     return StaffProfile(
-      role: StaffRole.values.firstWhere(
-        (role) => role.name == row['role'],
-        orElse: () => StaffRole.seller,
-      ),
+      role: _staffRole(row['role']?.toString()),
       displayName: row['display_name'] as String,
       sellerId: row['seller_id'] as String?,
     );
@@ -110,7 +134,7 @@ class SupabaseStaffRepository implements StaffRepository {
         .from('orders')
         .select(
           'id,order_number,status,subtotal_cop,discount_cop,shipping_cop,'
-          'shipping_status,created_at,customers(name,whatsapp,city),'
+          'shipping_status,shipping_carrier,created_at,customers(name,whatsapp,city),'
           'order_customer_delivery_preferences(requires_delivery),'
           'origin_seller:sellers!orders_seller_id_fkey(display_name),'
           'assigned_seller:sellers!orders_assigned_seller_id_fkey(id,display_name),'
@@ -269,11 +293,16 @@ class SupabaseStaffRepository implements StaffRepository {
   }
 
   @override
-  Future<void> confirmShipping(String orderId, int shippingCop) async {
+  Future<void> confirmShipping(
+    String orderId,
+    String carrier,
+    int shippingCop,
+  ) async {
     await _client.rpc<dynamic>(
       'confirm_order_shipping',
       params: {
         'target_order_id': orderId,
+        'shipping_carrier_name': carrier.trim(),
         'confirmed_shipping_cop': shippingCop,
       },
     );
@@ -457,7 +486,16 @@ class SupabaseStaffRepository implements StaffRepository {
       discountCop: row['discount_cop'] as int,
       shippingCop: row['shipping_cop'] as int,
       shippingStatus: row['shipping_status'] as String,
+      shippingCarrier: row['shipping_carrier'] as String?,
       createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
     );
   }
 }
+
+StaffRole _staffRole(String? value) => switch (value?.toLowerCase()) {
+  'admin' => StaffRole.admin,
+  'owner' || 'propietario' => StaffRole.owner,
+  'manager' || 'staff' => StaffRole.manager,
+  'seller' => StaffRole.seller,
+  _ => throw const AuthException('El perfil no tiene un rol autorizado.'),
+};

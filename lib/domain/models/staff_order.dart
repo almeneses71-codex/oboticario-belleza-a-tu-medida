@@ -218,6 +218,7 @@ class StaffOrder {
     required this.shippingCop,
     required this.shippingStatus,
     required this.createdAt,
+    this.shippingCarrier,
     this.customerCity,
     this.customerRequiresDelivery,
     this.sellerName,
@@ -259,6 +260,7 @@ class StaffOrder {
   final int discountCop;
   final int shippingCop;
   final String shippingStatus;
+  final String? shippingCarrier;
   final DateTime createdAt;
 
   int get totalCop => subtotalCop - discountCop + shippingCop;

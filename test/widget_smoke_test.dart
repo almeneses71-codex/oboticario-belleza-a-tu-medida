@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oboticario_belleza_a_tu_medida/app/app.dart';
+import 'package:oboticario_belleza_a_tu_medida/app/staff_auth_restore.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_catalog_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/data/local_cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/cross_sell_relation.dart';
@@ -10,6 +11,7 @@ import 'package:oboticario_belleza_a_tu_medida/domain/models/question.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/repositories/catalog_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/repositories/cross_sell_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/models/order.dart';
+import 'package:oboticario_belleza_a_tu_medida/domain/models/staff_order.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/repositories/order_repository.dart';
 import 'package:oboticario_belleza_a_tu_medida/domain/repositories/staff_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,8 +76,57 @@ void main() {
     expect(find.text('Pregunta 2 de 5'), findsOneWidget);
   });
 
+  testWidgets('Ana enters order management after a clean Google callback', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await StaffAuthRestore.markPending();
+    final staffRepository = _DelayedAnaStaffRepository();
+
+    await tester.pumpWidget(
+      BeautyAdvisorApp(
+        repository: catalogRepository,
+        crossSellRepository: crossSellRepository,
+        orderRepository: _AvailabilityOnlyRepository(availableIds),
+        analytics: LocalAnalyticsService(),
+        staffRepository: staffRepository,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pedidos'), findsOneWidget);
+    expect(find.text('Hola, Ana'), findsOneWidget);
+    expect(find.text('Continuar con Google'), findsNothing);
+    expect(find.text('Belleza a tu medida'), findsNothing);
+  });
+
+  testWidgets(
+    'restored authorized Google session opens order management directly',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        BeautyAdvisorApp(
+          repository: catalogRepository,
+          crossSellRepository: crossSellRepository,
+          orderRepository: _AvailabilityOnlyRepository(availableIds),
+          analytics: LocalAnalyticsService(),
+          staffRepository: _RestoredStaffRepository(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pedidos'), findsOneWidget);
+      expect(find.text('Hola, Administrador'), findsOneWidget);
+      expect(find.text('Continuar con Google'), findsNothing);
+      expect(find.text('Belleza a tu medida'), findsNothing);
+    },
+  );
+
   for (final configured in [true, false]) {
-    testWidgets('administrative access stays at bottom: cloud=$configured', (tester) async {
+    testWidgets('administrative access stays at bottom: cloud=$configured', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -110,7 +161,66 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+}
 
+class _DelayedAnaStaffRepository implements StaffRepository {
+  int _sessionChecks = 0;
+
+  @override
+  bool get hasSession => ++_sessionChecks >= 3;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<StaffProfile?> loadCurrentProfile() async =>
+      const StaffProfile(role: StaffRole.seller, displayName: 'Ana');
+
+  @override
+  Future<StaffOrderPage> loadOrders({
+    StaffOrderFilter filter = const StaffOrderFilter(),
+  }) async => const StaffOrderPage(orders: [], totalCount: 0);
+
+  @override
+  Future<Map<String, int>> loadStatusCounts() async => const {};
+
+  @override
+  Future<Map<String, int>> loadAttentionCounts() async => const {};
+
+  @override
+  Future<List<StaffSellerOption>> loadAssignableSellers() async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RestoredStaffRepository implements StaffRepository {
+  @override
+  bool get hasSession => true;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<StaffProfile?> loadCurrentProfile() async =>
+      const StaffProfile(role: StaffRole.admin, displayName: 'Administrador');
+
+  @override
+  Future<StaffOrderPage> loadOrders({
+    StaffOrderFilter filter = const StaffOrderFilter(),
+  }) async => const StaffOrderPage(orders: [], totalCount: 0);
+
+  @override
+  Future<Map<String, int>> loadStatusCounts() async => const {};
+
+  @override
+  Future<Map<String, int>> loadAttentionCounts() async => const {};
+
+  @override
+  Future<List<StaffSellerOption>> loadAssignableSellers() async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _SignedOutStaffRepository implements StaffRepository {

@@ -21,6 +21,7 @@ import 'app_config.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
 import 'staff_app.dart';
+import 'staff_auth_restore.dart';
 
 class BeautyAdvisorApp extends StatefulWidget {
   const BeautyAdvisorApp({
@@ -44,6 +45,7 @@ class BeautyAdvisorApp extends StatefulWidget {
 
 class _BeautyAdvisorAppState extends State<BeautyAdvisorApp> {
   late final AppController controller;
+  late final Future<bool> _restoreStaffAccess;
 
   @override
   void initState() {
@@ -54,6 +56,37 @@ class _BeautyAdvisorAppState extends State<BeautyAdvisorApp> {
       orderRepository: widget.orderRepository,
       analytics: widget.analytics,
     )..initialize();
+    _restoreStaffAccess = _hasAuthorizedStaffSession().timeout(
+      const Duration(seconds: 12),
+      onTimeout: () => false,
+    );
+  }
+
+  Future<bool> _hasAuthorizedStaffSession() async {
+    final repository = widget.staffRepository;
+    if (repository == null) return false;
+
+    final oauthReturnPending = await StaffAuthRestore.isPending();
+    if (!repository.hasSession && !oauthReturnPending) return false;
+
+    try {
+      for (var attempt = 0; attempt < 50; attempt++) {
+        if (repository.hasSession) {
+          final profile = await repository.loadCurrentProfile().timeout(
+            const Duration(seconds: 4),
+            onTimeout: () => null,
+          );
+          await StaffAuthRestore.clear();
+          return profile != null;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      return false;
+    } catch (_) {
+      return false;
+    } finally {
+      if (oauthReturnPending) await StaffAuthRestore.clear();
+    }
   }
 
   @override
@@ -67,12 +100,25 @@ class _BeautyAdvisorAppState extends State<BeautyAdvisorApp> {
     debugShowCheckedModeBanner: false,
     title: 'oBoticario Belleza a tu Medida',
     theme: AppTheme.light,
-    home: AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) => _AppShell(
-        controller: controller,
-        staffRepository: widget.staffRepository,
-      ),
+    home: FutureBuilder<bool>(
+      future: _restoreStaffAccess,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.data == true) {
+          return StaffApp(repository: widget.staffRepository);
+        }
+        return AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) => _AppShell(
+            controller: controller,
+            staffRepository: widget.staffRepository,
+          ),
+        );
+      },
     ),
   );
 }
@@ -233,75 +279,74 @@ class _WelcomeScreen extends StatelessWidget {
         prominent: true,
         child: _PageFrame(
           child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 220),
-          Card(
-            color: const Color(0xF7FFFBF4),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Belleza a tu medida',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: AppTheme.green,
-                      fontSize: 34,
-                      height: 1.05,
-                    ),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 220),
+              Card(
+                color: const Color(0xF7FFFBF4),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Belleza a tu medida',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: AppTheme.green,
+                              fontSize: 34,
+                              height: 1.05,
+                            ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Encuentra los productos ideales para ti en solo 2 minutos.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      const _Benefit(
+                        icon: Icons.favorite_border,
+                        text: 'Recomendación personalizada.',
+                      ),
+                      const _Benefit(
+                        icon: Icons.format_list_numbered,
+                        text: 'Solo 5 preguntas.',
+                      ),
+                      const _Benefit(
+                        icon: Icons.support_agent,
+                        text: 'Acompañamiento de un asesor.',
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Te acompaña ${AppConfig.advisorName}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.green,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: controller.begin,
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text('Comenzar mi diagnóstico'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Encuentra los productos ideales para ti en solo 2 minutos.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  const _Benefit(
-                    icon: Icons.favorite_border,
-                    text: 'Recomendación personalizada.',
-                  ),
-                  const _Benefit(
-                    icon: Icons.format_list_numbered,
-                    text: 'Solo 5 preguntas.',
-                  ),
-                  const _Benefit(
-                    icon: Icons.support_agent,
-                    text: 'Acompañamiento de un asesor.',
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Te acompaña ${AppConfig.advisorName}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.green,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: controller.begin,
-                    icon: const Icon(Icons.auto_awesome),
-                    label: const Text('Comenzar mi diagnóstico'),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            AppConfig.independentAdvisorNotice,
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF465B54)),
-          ),
- 
-        const SizedBox(height: 14),
+              const SizedBox(height: 14),
+              Text(
+                AppConfig.independentAdvisorNotice,
+                textAlign: TextAlign.center,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF465B54)),
+              ),
 
-        ], 
-        
+              const SizedBox(height: 14),
+            ],
           ),
         ),
       ),
@@ -793,7 +838,6 @@ class _ResultScreenState extends State<_ResultScreen> {
     for (final candidate in nextCrossSell.candidates) {
       controller.recordCrossSellShown(candidate);
     }
-    
   }
 
   Future<void> _showDeliveryNextStep() async {
@@ -1547,7 +1591,9 @@ class _RequestContentState extends State<_RequestContent>
             if (!_deliveryIsComplete) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Selecciona el tipo de envío y completa los datos de entrega.'),
+                  content: Text(
+                    'Selecciona el tipo de envío y completa los datos de entrega.',
+                  ),
                 ),
               );
               return;

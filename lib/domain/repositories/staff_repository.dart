@@ -66,5 +66,5 @@ abstract interface class StaffRepository {
     String note,
   );
   Future<void> updateStatus(String orderId, String status, {String? note});
-  Future<void> confirmShipping(String orderId, int shippingCop);
+  Future<void> confirmShipping(String orderId, String carrier, int shippingCop);
 }

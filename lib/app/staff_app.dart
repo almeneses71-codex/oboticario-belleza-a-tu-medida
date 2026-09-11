@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../domain/models/staff_order.dart';
 import '../domain/repositories/staff_repository.dart';
 import '../domain/staff_operation_error.dart';
+import 'staff_auth_restore.dart';
 
 class StaffApp extends StatefulWidget {
   const StaffApp({required this.repository, super.key});
@@ -88,7 +89,6 @@ class StaffController extends ChangeNotifier {
     }
   }
 
- 
   Future<void> signInWithGoogle() async {
     if (!configured || submitting) return;
 
@@ -98,6 +98,7 @@ class StaffController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await StaffAuthRestore.markPending();
       profile = await repository.signInWithGoogle();
 
       await _loadFirstPage();
@@ -119,6 +120,7 @@ class StaffController extends ChangeNotifier {
           ? 'El acceso con Google fue aceptado, pero no fue posible cargar el panel.'
           : 'No fue posible ingresar con Google.';
     } finally {
+      await StaffAuthRestore.clear();
       submitting = false;
       notifyListeners();
     }
@@ -233,9 +235,15 @@ class StaffController extends ChangeNotifier {
     await _runMutation(() => _repository!.updateStatus(order.id, next));
   }
 
-  Future<void> confirmShipping(StaffOrder order, int amount) async {
+  Future<void> confirmShipping(
+    StaffOrder order,
+    String carrier,
+    int amount,
+  ) async {
     if (submitting) return;
-    await _runMutation(() => _repository!.confirmShipping(order.id, amount));
+    await _runMutation(
+      () => _repository!.confirmShipping(order.id, carrier, amount),
+    );
   }
 
   Future<void> cancel(StaffOrder order, String reason) async {
@@ -617,8 +625,8 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                         order: order,
                         busy: controller.submitting,
                         onAdvance: () => controller.advance(order),
-                        onShipping: (amount) =>
-                            controller.confirmShipping(order, amount),
+                        onShipping: (carrier, amount) =>
+                            controller.confirmShipping(order, carrier, amount),
                         onCancel: (reason) => controller.cancel(order, reason),
                         assignableSellers: controller.assignableSellers,
                         onAssign: (sellerId, reason) => controller
@@ -745,7 +753,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                     ),
                     DropdownMenuItem(
                       value: 'delivery_pending',
-                      child: Text('Entrega por definir'),
+                      child: Text('Datos de envío pendientes'),
                     ),
                     DropdownMenuItem(
                       value: 'availability_issue',
@@ -919,7 +927,7 @@ class _AttentionMetrics extends StatelessWidget {
       _chip(
         context,
         'delivery_pending',
-        'Entrega por definir',
+        'Datos de envío pendientes',
         Icons.local_shipping_outlined,
       ),
       _chip(
@@ -1014,7 +1022,7 @@ class StaffOrderCard extends StatelessWidget {
   final StaffOrder order;
   final bool busy;
   final VoidCallback onAdvance;
-  final ValueChanged<int> onShipping;
+  final void Function(String carrier, int amount) onShipping;
   final ValueChanged<String> onCancel;
   final List<StaffSellerOption> assignableSellers;
   final void Function(String sellerId, String reason) onAssign;
@@ -1147,7 +1155,7 @@ class StaffOrderCard extends StatelessWidget {
               ),
               if (order.shippingStatus == 'pending_quote')
                 const Text(
-                  'Pendiente de validación por el equipo; todavía no define el costo ni confirma la entrega.',
+                  'Modalidad confirmada por el cliente; falta registrar transportadora y costo.',
                   style: TextStyle(color: Color(0xFF7A4E00)),
                 ),
             ],
@@ -1184,8 +1192,10 @@ class StaffOrderCard extends StatelessWidget {
               'not_required' => 'Entrega directa: sin costo de domicilio',
               'manually_confirmed' =>
                 'Domicilio confirmado: ${_money(order.shippingCop)}',
-              _ => 'Entrega: pendiente de definir',
+              _ => 'Datos de envío: pendientes de registrar',
             }),
+            if (order.shippingCarrier?.isNotEmpty == true)
+              Text('Transportadora: ${order.shippingCarrier}'),
             Text('Total: ${_money(order.totalCop)}'),
             if (order.deliveryHistory.isNotEmpty) ...[
               const Divider(height: 28),
@@ -1419,71 +1429,66 @@ class StaffOrderCard extends StatelessWidget {
   );
 
   Future<void> _askShipping(BuildContext context) async {
-    bool? requiresDelivery;
-    final amount = await showDialog<int>(
-      context: context,
-      builder: (dialogContext) => _DialogTextControllerHost(
-        builder: (context, input) => StatefulBuilder(
+    final carrierController = TextEditingController(
+      text: order.shippingCarrier ?? '',
+    );
+    final costController = TextEditingController(
+      text: order.shippingCop > 0 ? order.shippingCop.toString() : '',
+    );
+    try {
+      final request = await showDialog<_ShippingRequest>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) {
-            final parsed = int.tryParse(
-              input.text.replaceAll(RegExp(r'\D'), ''),
+            final amount = int.tryParse(
+              costController.text.replaceAll(RegExp(r'\D'), ''),
             );
             final canSave =
-                requiresDelivery == false ||
-                (requiresDelivery == true &&
-                    parsed != null &&
-                    parsed > 0 &&
-                    parsed <= 100000);
+                carrierController.text.trim().length >= 2 &&
+                amount != null &&
+                amount >= 0 &&
+                amount <= 100000;
+            final modality = order.customerRequiresDelivery == true
+                ? 'Domicilio solicitado por el cliente'
+                : 'Entrega directa acordada con el cliente';
             return AlertDialog(
-              title: const Text('Definir entrega del pedido'),
+              title: const Text('Registrar datos de envío'),
               content: SizedBox(
                 width: 460,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('¿Este pedido requiere domicilio?'),
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Modalidad elegida por el cliente',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(
+                        modality,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
-                    ListTile(
-                      leading: Icon(
-                        requiresDelivery == false
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_off,
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: carrierController,
+                      autofocus: true,
+                      onChanged: (_) => setDialogState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'Empresa de envío / transportadora',
+                        border: OutlineInputBorder(),
                       ),
-                      title: const Text('Entrega directa (sin domicilio)'),
-                      subtitle: const Text(
-                        'El producto se entrega directamente al cliente.',
-                      ),
-                      selected: requiresDelivery == false,
-                      onTap: () =>
-                          setDialogState(() => requiresDelivery = false),
                     ),
-                    ListTile(
-                      leading: Icon(
-                        requiresDelivery == true
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_off,
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: costController,
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => setDialogState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'Costo de envío del pedido',
+                        helperText: 'Ingresa un valor entre 0 y 100.000 pesos.',
+                        border: OutlineInputBorder(),
                       ),
-                      title: const Text('Requiere domicilio'),
-                      subtitle: const Text(
-                        'El costo se suma por separado al total.',
-                      ),
-                      selected: requiresDelivery == true,
-                      onTap: () =>
-                          setDialogState(() => requiresDelivery = true),
                     ),
-                    if (requiresDelivery == true)
-                      TextField(
-                        controller: input,
-                        autofocus: true,
-                        keyboardType: TextInputType.number,
-                        onChanged: (_) => setDialogState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Costo del domicilio en pesos',
-                          helperText: 'Ingresa un valor entre 1 y 100.000.',
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -1496,18 +1501,24 @@ class StaffOrderCard extends StatelessWidget {
                   onPressed: canSave
                       ? () => _closeDialog(
                           dialogContext,
-                          requiresDelivery == true ? parsed : 0,
+                          _ShippingRequest(
+                            carrierController.text.trim(),
+                            amount!,
+                          ),
                         )
                       : null,
-                  child: const Text('Guardar entrega'),
+                  child: const Text('Guardar datos de envío'),
                 ),
               ],
             );
           },
         ),
-      ),
-    );
-    if (amount != null) onShipping(amount);
+      );
+      if (request != null) onShipping(request.carrier, request.amount);
+    } finally {
+      carrierController.dispose();
+      costController.dispose();
+    }
   }
 
   Future<void> _askAvailability(BuildContext context) async {
@@ -1960,8 +1971,8 @@ class _NextActionCard extends StatelessWidget {
         onAdvance,
       ),
       StaffOrderNextAction.confirmShipping => (
-        'Indica si el pedido requiere domicilio o se entregará directamente al cliente.',
-        'Definir entrega',
+        'La modalidad ya fue elegida por el cliente. Registra únicamente la transportadora y el costo total del envío.',
+        'Registrar datos de envío',
         Icons.local_shipping_outlined,
         onConfirmShipping,
       ),
@@ -2008,6 +2019,13 @@ class _NextActionCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ShippingRequest {
+  const _ShippingRequest(this.carrier, this.amount);
+
+  final String carrier;
+  final int amount;
 }
 
 class _AssignmentRequest {
@@ -2266,7 +2284,8 @@ String _compactNextStep(StaffOrder order) => switch (order.nextAction) {
     'Pendiente: consultar disponibilidad en tienda',
   StaffOrderNextAction.markAvailabilityVerified =>
     'Pendiente: registrar disponibilidad verificada',
-  StaffOrderNextAction.confirmShipping => 'Pendiente: definir la entrega',
+  StaffOrderNextAction.confirmShipping =>
+    'Pendiente: registrar transportadora y costo',
   StaffOrderNextAction.recordCustomerAcceptance =>
     'Pendiente: confirmación del cliente',
   StaffOrderNextAction.confirmOrder => 'Pendiente: confirmar el pedido',
@@ -2275,7 +2294,7 @@ String _compactNextStep(StaffOrder order) => switch (order.nextAction) {
 };
 
 String _deliveryEventLabel(String status, int amount) => switch (status) {
-  'pending_quote' => 'entrega sin definir',
+  'pending_quote' => 'datos de envío pendientes',
   'not_required' => 'entrega directa sin domicilio',
   _ => 'domicilio de ${_money(amount)}',
 };
