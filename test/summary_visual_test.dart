@@ -70,6 +70,17 @@ void main() {
         );
       }
 
+      expect(
+        find.byKey(const Key('explore-selection-guidance')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Selecciona el producto que te interesa para continuar y obtener tu descuento en la ruleta.',
+        ),
+        findsOneWidget,
+      );
+
       for (var selectedProducts = 0; selectedProducts < 2; selectedProducts++) {
         final productAction = find.widgetWithText(
           FilledButton,
@@ -183,6 +194,92 @@ void main() {
       expect(find.text('¿QUÉ SIGUE?'), findsOneWidget);
       await tester.ensureVisible(find.text('Realizar otra compra'));
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'recommended cards keep a responsive product-first layout',
+    (tester) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.view.devicePixelRatio = 1;
+
+      for (final size in const [
+        Size(360, 760),
+        Size(768, 900),
+        Size(1366, 900),
+      ]) {
+        tester.view.physicalSize = size;
+        SharedPreferences.setMockInitialValues({});
+        await tester.pumpWidget(
+          BeautyAdvisorApp(
+            key: ValueKey('responsive-${size.width}'),
+            repository: catalogRepository,
+            crossSellRepository: crossSellRepository,
+            orderRepository: _FakeWheelOrderRepository(availableIds),
+            analytics: LocalAnalyticsService(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await _tapVisible(tester, 'Comenzar mi diagnóstico');
+        await _tapVisible(tester, 'Cuidado corporal');
+        for (final answer in [
+          'No estoy seguro',
+          'Hidratar',
+          'Loción',
+          'Hidratación prolongada',
+        ]) {
+          await _tapVisible(tester, answer);
+          await _tapVisible(
+            tester,
+            answer == 'Hidratación prolongada'
+                ? 'Ver mi recomendación'
+                : 'Continuar',
+          );
+        }
+
+        final cards = find.byWidgetPredicate(
+          (widget) =>
+              widget is Card &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'recommended-product-card-',
+              ),
+        );
+        final images = find.byWidgetPredicate(
+          (widget) =>
+              widget is Container &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'product-image-',
+              ),
+        );
+
+        expect(cards, findsNWidgets(2));
+        expect(images, findsNWidgets(2));
+        expect(
+          find.text(
+            'Cuidado experto para una piel más saludable y radiante',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.widgetWithText(FilledButton, 'Me interesa este producto'),
+          findsNWidgets(2),
+        );
+        expect(
+          find.text(
+            'Al continuar podrás obtener tu descuento en la ruleta.',
+          ),
+          findsNWidgets(2),
+        );
+        expect(tester.getSize(images.first).height, greaterThanOrEqualTo(280));
+        if (size.width >= 768) {
+          expect(tester.getSize(cards.first).width, greaterThan(700));
+        }
+        expect(tester.takeException(), isNull);
+      }
     },
   );
 }

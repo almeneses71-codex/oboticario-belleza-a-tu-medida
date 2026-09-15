@@ -188,6 +188,7 @@ class _AppShell extends StatelessWidget {
         controller.stage == AppStage.categories ||
         controller.stage == AppStage.questionnaire;
     return _PhoneFrame(
+      expand: controller.stage == AppStage.result,
       child: Scaffold(
         appBar: controller.stage == AppStage.welcome
             ? null
@@ -665,6 +666,7 @@ class _ResultScreenState extends State<_ResultScreen> {
     final primary = result.primary!;
     return _VisualBackground(
       child: _PageFrame(
+        maxWidth: 1180,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -674,6 +676,16 @@ class _ResultScreenState extends State<_ResultScreen> {
               'Tu recomendación principal',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Cuidado experto para una piel más saludable y radiante',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppTheme.green,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             if (result.confidence == RecommendationConfidence.low) ...[
               const SizedBox(height: 12),
@@ -689,6 +701,33 @@ class _ResultScreenState extends State<_ResultScreen> {
               ),
             ],
             const SizedBox(height: 22),
+            Container(
+              key: const Key('explore-selection-guidance'),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF4D6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE3C48E)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.touch_app, color: AppTheme.gold),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Selecciona el producto que te interesa para continuar y obtener tu descuento en la ruleta.',
+                      style: TextStyle(
+                        color: Color(0xFF3F3426),
+                        fontWeight: FontWeight.w800,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
             _ProductCard(
               ranked: primary,
               primary: true,
@@ -1016,6 +1055,7 @@ class _ProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final product = ranked.product;
     return Card(
+      key: ValueKey('recommended-product-card-${product.code}'),
       color: primary ? const Color(0xFFF0F8F5) : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(22),
@@ -1029,67 +1069,10 @@ class _ProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _ProductImage(product: product),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (product.isSuggestedKit)
-                        const Text(
-                          'PROPUESTA SUGERIDA · NO ES SKU OFICIAL',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.blue,
-                          ),
-                        ),
-                      Text(
-                        product.name,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      Text('${product.presentation} · Código ${product.code}'),
-                    ],
-                  ),
-                ),
-              ],
+            _ProductHero(
+              product: product,
+              immediateDelivery: immediateDelivery,
             ),
-            const SizedBox(height: 16),
-            Text(
-              priceLabel(product.priceCop),
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: AppTheme.green,
-              ),
-            ),
-            Text(
-              AppConfig.priceIsCurrent
-                  ? 'Precio de referencia · Ciclo 08, agosto de 2026'
-                  : 'Precio sujeto a confirmación',
-            ),
-            Text('Disponibilidad revisada: ${product.updated}'),
-            if (immediateDelivery) ...[
-              const SizedBox(height: 10),
-              Chip(
-                key: ValueKey('immediate-delivery-${product.code}'),
-                avatar: const Icon(
-                  Icons.local_shipping_outlined,
-                  size: 18,
-                  color: AppTheme.green,
-                ),
-                label: const Text('Entrega inmediata'),
-                backgroundColor: const Color(0xFFE8F5EE),
-                side: const BorderSide(color: Color(0xFFB8DCC9)),
-                labelStyle: const TextStyle(
-                  color: AppTheme.green,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
             const SizedBox(height: 16),
             if (product.familyOrActive.isNotEmpty) ...[
               Text(
@@ -1135,6 +1118,32 @@ class _ProductCard extends StatelessWidget {
                     : 'Me interesa este producto',
               ),
             ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF4D6),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE3C48E)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.card_giftcard, color: AppTheme.gold, size: 24),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Al continuar podrás obtener tu descuento en la ruleta.',
+                      style: TextStyle(
+                        color: Color(0xFF3F3426),
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -1150,6 +1159,137 @@ class _ProductCard extends StatelessWidget {
     }
     return '${buffer.toString()} COP';
   }
+}
+
+class _ProductHero extends StatelessWidget {
+  const _ProductHero({
+    required this.product,
+    required this.immediateDelivery,
+  });
+
+  final Product product;
+  final bool immediateDelivery;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 620;
+      final image = _ProductImage(
+        product: product,
+        width: wide ? 330 : double.infinity,
+        height: wide ? 360 : 280,
+      );
+      final details = _ProductHeroDetails(
+        product: product,
+        immediateDelivery: immediateDelivery,
+      );
+      if (!wide) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [image, const SizedBox(height: 20), details],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(flex: 5, child: image),
+          const SizedBox(width: 34),
+          Expanded(flex: 6, child: details),
+        ],
+      );
+    },
+  );
+}
+
+class _ProductHeroDetails extends StatelessWidget {
+  const _ProductHeroDetails({
+    required this.product,
+    required this.immediateDelivery,
+  });
+
+  final Product product;
+  final bool immediateDelivery;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (product.isSuggestedKit)
+        const Text(
+          'PROPUESTA SUGERIDA · NO ES SKU OFICIAL',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.green,
+          ),
+        ),
+      Text(
+        product.familyOrActive.isEmpty ? 'O Boticário' : product.familyOrActive,
+        style: const TextStyle(
+          color: AppTheme.green,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        product.name,
+        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          height: 1.12,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text('${product.presentation} · Código ${product.code}'),
+      const SizedBox(height: 16),
+      Text(
+        _ProductCard.priceLabel(product.priceCop),
+        style: const TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.w900,
+          color: AppTheme.green,
+        ),
+      ),
+      const SizedBox(height: 4),
+      Row(
+        children: [
+          const Icon(Icons.verified_outlined, size: 18, color: AppTheme.green),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              AppConfig.priceIsCurrent
+                  ? 'Precio de referencia · Ciclo 08, agosto de 2026'
+                  : 'Precio sujeto a confirmación',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 6),
+      Text(
+        'Disponibilidad revisada: ${product.updated}',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      if (immediateDelivery) ...[
+        const SizedBox(height: 10),
+        Chip(
+          key: ValueKey('immediate-delivery-${product.code}'),
+          avatar: const Icon(
+            Icons.local_shipping_outlined,
+            size: 18,
+            color: AppTheme.green,
+          ),
+          label: const Text('Entrega inmediata'),
+          backgroundColor: const Color(0xFFE8F5EE),
+          side: const BorderSide(color: Color(0xFFB8DCC9)),
+          labelStyle: const TextStyle(
+            color: AppTheme.green,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    ],
+  );
 }
 
 class _ComplementaryCard extends StatelessWidget {
@@ -1217,9 +1357,11 @@ class _ComplementaryCard extends StatelessWidget {
 }
 
 class _ProductImage extends StatelessWidget {
-  const _ProductImage({required this.product});
+  const _ProductImage({required this.product, this.width, this.height});
 
   final Product product;
+  final double? width;
+  final double? height;
 
   @override
   Widget build(BuildContext context) {
@@ -1227,8 +1369,9 @@ class _ProductImage extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        width: compact ? 110 : 120,
-        height: compact ? 140 : 150,
+        key: ValueKey('product-image-${product.code}'),
+        width: width ?? (compact ? 110 : 120),
+        height: height ?? (compact ? 140 : 150),
         color: Colors.white,
         child: Image.asset(
           product.resolvedImagePath,
@@ -2416,9 +2559,10 @@ class _VisualBackground extends StatelessWidget {
 }
 
 class _PageFrame extends StatelessWidget {
-  const _PageFrame({required this.child});
+  const _PageFrame({required this.child, this.maxWidth = 760});
 
   final Widget child;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -2426,7 +2570,7 @@ class _PageFrame extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 24, 18, 40),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
+          constraints: BoxConstraints(maxWidth: maxWidth),
           child: child,
         ),
       ),
@@ -2435,9 +2579,10 @@ class _PageFrame extends StatelessWidget {
 }
 
 class _PhoneFrame extends StatelessWidget {
-  const _PhoneFrame({required this.child});
+  const _PhoneFrame({required this.child, this.expand = false});
 
   final Widget child;
+  final bool expand;
 
   static const double phoneType2Width = 390;
   static const double phoneType2Height = 844;
@@ -2448,7 +2593,7 @@ class _PhoneFrame extends StatelessWidget {
       // On a real phone, or in the compact Chrome window opened by
       // run_phone_2.ps1, the app uses the whole viewport. On desktop it is
       // always presented inside the approved Phone Type 2 frame.
-      if (constraints.maxWidth <= 480) return child;
+      if (constraints.maxWidth <= 480 || expand) return child;
       final availableHeight = constraints.maxHeight - 32;
       final phoneHeight = availableHeight > phoneType2Height
           ? phoneType2Height
