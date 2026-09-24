@@ -79,6 +79,39 @@ void main() {
   });
 
   test(
+    'facial spots and uneven tone prioritizes mandelic plus tranexamic serum',
+    () async {
+      final questions = await repository.loadQuestions();
+      final facialNeed = questions.firstWhere(
+        (question) => question.id == 'fac_necesidad',
+      );
+      final spots = facialNeed.options.firstWhere(
+        (option) => option.id == 'manchas_tono',
+      );
+      final luminosity = facialNeed.options.firstWhere(
+        (option) => option.id == 'luminosidad',
+      );
+
+      expect(spots.label, 'Manchas y tono desigual');
+      expect(luminosity.label, 'Luminosidad');
+      expect(luminosity.boosts.single.queries, ['luminosidad', 'luminoso']);
+
+      final result = await recommend('facial', const {
+        'fac_necesidad': 'manchas_tono',
+        'fac_piel': 'no_seguro',
+        'fac_resultado': 'no_seguro',
+        'fac_rutina': 'no_seguro',
+      });
+
+      expect(result.hasMatch, isTrue);
+      expect(result.primary!.product.id, 'CAT-47321');
+      expect(result.primary!.product.available, isTrue);
+      expect(result.primary!.product.eligible, isTrue);
+      expect(result.primary!.score, 100);
+    },
+  );
+
+  test(
     'hair and eligible September gifts both return stable results',
     () async {
       final hair = await recommend('cabello', const {
