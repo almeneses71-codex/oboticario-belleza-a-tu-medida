@@ -31,6 +31,7 @@ where code = 'AMOR_AMISTAD_2026';
 create temporary table wheel_test_results as
 select public.spin_amor_amistad_2026(
   jsonb_build_object(
+    'journeyId', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     'customer', jsonb_build_object('name', 'Cliente Ruleta', 'whatsapp', '573009991111'),
     'items', jsonb_build_array(
       jsonb_build_object('productId', 'OB001', 'productCode', '60138', 'quantity', 1),
@@ -50,6 +51,7 @@ select is(
 create temporary table recovered_wheel_result as
 select public.spin_amor_amistad_2026(
   jsonb_build_object(
+    'journeyId', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     'customer', jsonb_build_object('name', 'Cliente Ruleta', 'whatsapp', '3009991111'),
     'items', jsonb_build_array(jsonb_build_object('productId', 'OB001', 'quantity', 1))
   )
@@ -58,19 +60,20 @@ select public.spin_amor_amistad_2026(
 select is(
   (select result->>'spin_id' from recovered_wheel_result),
   (select result->>'spin_id' from wheel_test_results),
-  'same normalized WhatsApp recovers the same spin'
+  'the same campaign journey recovers the same spin'
 );
 select is(
   (select count(*)::integer from public.campaign_wheel_spins spin
     join public.customers customer on customer.id = spin.customer_id
     where customer.whatsapp = '573009991111'),
   1,
-  'customer and campaign uniqueness blocks a second spin'
+  'campaign and journey uniqueness blocks a second spin'
 );
 
 create temporary table other_customer_result as
 select public.spin_amor_amistad_2026(
   jsonb_build_object(
+    'journeyId', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     'customer', jsonb_build_object('name', 'Otro Cliente', 'whatsapp', '573009992222'),
     'items', jsonb_build_array(jsonb_build_object('productId', 'OB001', 'quantity', 1))
   )

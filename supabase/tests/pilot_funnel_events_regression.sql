@@ -158,8 +158,8 @@ begin
       where table_schema = 'public' and table_name = 'pilot_funnel_events'
         and column_name in ('name', 'whatsapp', 'address', 'customer', 'answers'))),
     ('commercial event enum unchanged', (
-      select array_agg(enumlabel order by enumsortorder)
-        = array['cross_sell_shown', 'complementary_added', 'complementary_removed']
+      select array_agg(enumlabel::text order by enumsortorder)
+        = array['cross_sell_shown', 'complementary_added', 'complementary_removed']::text[]
       from pg_enum where enumtypid = 'public.commercial_event_name'::regtype));
 
   if exists (select 1 from funnel_test_results where passed is distinct from true) then
