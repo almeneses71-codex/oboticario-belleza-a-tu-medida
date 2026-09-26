@@ -112,6 +112,25 @@ void main() {
   );
 
   test(
+    'primary facial concern outranks combined secondary matches',
+    () async {
+      final result = await recommend('facial', const {
+        'fac_necesidad': 'manchas_tono',
+        'fac_piel': 'grasa',
+        'fac_resultado': 'control',
+        'fac_rutina': 'sencilla',
+      });
+
+      expect(result.hasMatch, isTrue);
+      expect(result.primary!.product.id, 'CAT-47321');
+      expect(result.primary!.product.code, '47321');
+      expect(result.primary!.product.need, contains('manchas'));
+      expect(result.primary!.product.id, isNot('OB039'));
+      expect(result.primary!.product.id, isNot('OB043'));
+    },
+  );
+
+  test(
     'hair and eligible September gifts both return stable results',
     () async {
       final hair = await recommend('cabello', const {

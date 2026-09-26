@@ -98,10 +98,10 @@ class RecommendationEngine {
     }
 
     ranked.sort((a, b) {
-      var order = b.ranked.score.compareTo(a.ranked.score);
+      var order = b.primaryMatch.compareTo(a.primaryMatch);
       if (order != 0) return order;
 
-      order = b.primaryMatch.compareTo(a.primaryMatch);
+      order = b.ranked.score.compareTo(a.ranked.score);
       if (order != 0) return order;
 
       order = b.completeness.compareTo(a.completeness);
